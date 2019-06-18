@@ -1,0 +1,17 @@
+#ifndef H_resrc_offset
+#define H_resrc_offset
+
+/************************************************************************
+ * WARNING								*
+ * WARNING   "resrc_offset.h" is generated automatically by "gen_resrc".*
+ * WARNING   See the files "gen_resrc.c", "resrc_offset.header", and	*
+ * WARNING   "resrc_offset.trailer" to make changes.			*
+ * WARNING								*
+ ************************************************************************/
+
+/* Offsets from register r13 when running program */
+
+/* The values of R3 to R12 are used to save those registers when xlate_entry
+   is invoked for a new page while running the program.  These values
+   must match those in the "xlate_entry_raw" routine of "r13.s".
+*/

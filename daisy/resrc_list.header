@@ -1,0 +1,19 @@
+#ifndef H_resrc_list
+#define H_resrc_list
+
+/************************************************************************
+ * WARNING								*
+ * WARNING   "resrc_list.h" is generated automatically by "gen_resrc".	*
+ * WARNING   See the files "gen_resrc.c", "resrc_list.header", and	*
+ * WARNING   "resrc_list.trailer" to make changes.			*
+ * WARNING								*
+ ************************************************************************/
+
+/* The following specify positions in bit-vectors.  All groupings
+   such as CR0-CR31 must be aligned on a 32-bit boundary, e.g.
+   bits 32-63.
+*/
+/* General Purpose Registers:
+   NOTE:  Routines such as "map_template_regs" assume that 
+          R0 to R255 are numbered consecutively
+*/

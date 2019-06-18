@@ -1,0 +1,25 @@
+\contentsline {section}{\numberline {1}Introduction}{4}
+\contentsline {section}{\numberline {2}Sample Session with DAISY}{4}
+\contentsline {subsection}{\numberline {2.1}User View}{4}
+\contentsline {subsection}{\numberline {2.2}Internal View}{7}
+\contentsline {section}{\numberline {3}VLIW Tree Instructions and Generic Machine Model}{12}
+\contentsline {section}{\numberline {4}{\bf DAISY} Scheduling Algorithm}{16}
+\contentsline {section}{\numberline {5}{\bf DAISY} Optimizations}{19}
+\contentsline {subsection}{\numberline {5.1}Combining}{19}
+\contentsline {subsection}{\numberline {5.2}Copy Propagation}{19}
+\contentsline {subsection}{\numberline {5.3}Load-Store Must Aliases}{20}
+\contentsline {subsection}{\numberline {5.4}Load-Verify}{20}
+\contentsline {subsection}{\numberline {5.5}Dead Code Elimination}{21}
+\contentsline {subsection}{\numberline {5.6}Unification}{21}
+\contentsline {subsection}{\numberline {5.7}Unrolling}{23}
+\contentsline {section}{\numberline {6}{\bf DAISY} Data Structures}{23}
+\contentsline {section}{\numberline {7}Translation Idiosyncrasies}{27}
+\contentsline {subsection}{\numberline {7.1}{\it PowerPC} Translation Idiosyncrasies}{27}
+\contentsline {subsection}{\numberline {7.2}Other Idiosyncrasies}{29}
+\contentsline {section}{\numberline {8}Dumping VLIW Instructions}{29}
+\contentsline {section}{\numberline {9}VLIW Simulation Code}{31}
+\contentsline {section}{\numberline {10}Debugging {\bf DAISY}}{35}
+\contentsline {section}{\numberline {11}Post-Processing of {\bf DAISY} Output}{38}
+\contentsline {section}{\numberline {12}Caveats}{38}
+\contentsline {section}{\numberline {13}Building the {\bf DAISY} Executables}{42}
+\contentsline {section}{\numberline {14}Quick Start Running {\bf DAISY}}{42}

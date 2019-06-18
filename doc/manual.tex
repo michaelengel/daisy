@@ -1,0 +1,2516 @@
+%**********************************************************************%
+%*                                                                    *%
+%*                 Licensed Materials - Property of IBM               *%
+%*          © Copyright IBM Corp. 2000   All Rights Reserved          *%
+%*                                                                    *%
+%**********************************************************************%
+
+\documentclass[12pt]{article} 
+
+\usepackage{latex8}
+\usepackage{times}
+\usepackage{epsfig}
+
+\renewcommand{\baselinestretch}{1.1}
+\renewcommand\textfraction{0.0}
+\renewcommand\topfraction{1.0}
+
+\begin{document}
+
+\ 
+\vspace*{1.0in}
+
+\begin{center}
+\begin{LARGE}
+{\bf DAISY Dynamic Binary Translation Software}\\
+\end{LARGE}
+\vspace*{0.5in}
+{\bf Erik R. Altman}\\
+{\bf Kemal Ebcio\u{g}lu}\\
+{\it IBM T.J. Watson Research Center}\\
+PO Box 218\\
+Yorktown Heights, New York  10598
+\end{center}
+
+\vspace*{1.0in}
+
+\begin{center}
+{\bf Licensed Materials - Property of IBM\\}
+{\bf \copyright Copyright IBM Corp. 2000  All Rights Reserved}
+\end{center}
+
+
+\newpage
+
+\tableofcontents
+
+\newpage
+
+\listoffigures
+
+\newpage
+
+\section{Introduction}
+\label{sect-intro}
+
+{\bf DAISY} ({\bf D}ynamically {\bf A}rchitected {\bf I}nstruction
+{\bf S}et from {\bf Y}orktown) translates a program at runtime from
+one instruction set to another in a manner transparent to the user.
+In other words, the user sees only the input instruction set.  This
+implementation of {\bf DAISY} uses {\it PowerPC} as the input
+instruction set and a new VLIW architecture as the target instruction
+set.  This version also works on a page-by-page basis, translating all
+code it can find on the first page of an application program, then
+simulating this translated code until control passed to a new page,
+then translating the second page, and so on.  Thus, if some code pages
+are never executed, they are never translated.
+
+\noindent Further (dated) information on {\bf DAISY} can also be found at the
+DAISY website:
+
+{\bf www.research.ibm.com/daisy}
+
+\noindent and the IBM VLIW website:
+
+{\bf www.research.ibm.com/vliw}
+
+\section{Sample Session with DAISY}
+
+We now describe {\bf DAISY} in more detail, beginning with a sample
+session of a user running {\bf DAISY}.
+Section~\ref{sect-internal-view} then gives a rough overview of what
+{\bf DAISY} has done internally.
+
+\subsection{User View}
+\label{sect-user-view}
+
+\begin{figure}
+\begin{footnotesize}
+\begin{verbatim}
+
+Incorrect # of Arguments:
+Correct usage is
+
+	daisy [<flags>] <Executable> [<Executable Args>]
+
+where <Executable> is a fully linked and executable XCOFF file, and
+<Executable Args> are the normal arguments, if any, to <Executable>.
+The <flags> are for "daisy".  Currently there are:
+
+	-A:  Dump breakpoints for dbx in file "daisy.bk"
+
+	-B<info_dir>:  Directory to put info files for "dvstats"
+	               (Give full path if <Executable> changes curr directory)
+
+	-C:  Run without DAISY translation.
+
+	-E1: Trace all branches     in xlated   pgm.
+	-E2: Trace branch-and-links in xlated   pgm.
+	-E3: Trace cond branches    in xlated   pgm.
+	-E4: Trace all branches     in xlated   pgm and libs.
+	-E5: Trace branch-and-links in xlated   pgm and libs.
+	-E6: Trace cond branches    in xlated   pgm and libs.
+
+	-F:  Unroll loops as long as ILP improves.
+
+	-G:  Perform cache simulation.
+	-Z:  Save cache trace (as <Executable>.trace in <Executable> directory).
+
+	-H<num1>: If DAISY compiler invoked <num1> times, clr xlation table.
+	-J<num2>: If DAISY compiler invoked <num1> + <num2>
+	          times, finish execution in native mode.
+
+	-I:  Do NOT dump files needed by "dvstats"
+	-N:  Dump VLIW code in "daisy.vliw"
+
+	-K:  Override xlated program's segv handler
+
+	-L<num>: Do -M action if hit <num> dyn crosspage entry pts
+	-M<num>: If <num> = 1 stop, if 2 exec native code, else cont
+
+	-P:  Support Power architecture instead of PowerPC
+
+	-Q<num>:  If <num>==0, use real join pts, o.w. cnt only when pt starts
+	          a continuation.  W/no -Q, cnt whenever instruc encountered.
+
+	-R:  Use LOAD latency with LOAD-VERIFY, o.w. available immediately
+
+	-S:  Do NOT split complex record ops: op. into op,cmpi
+\end{verbatim}
+\end{footnotesize}
+\caption{(1) Usage info from invoking {\tt daisy} with no arguments.}
+\label{fig-daisy-info-1}
+\end{figure}
+
+\begin{figure}
+\begin{footnotesize}
+\begin{verbatim}
+Correct daisy usage flags (cont)
+
+	-T:  Save xlation to disk (in ./save.daisy) for possible reuse)
+	-U:  Retrieve prev xlation from disk (in ./save.daisy) for reuse)
+
+	-V<num>: Running AIX version <num> (Default=414)
+
+	-W:  Dump to stdout, a copy of stats appended to "daisy.stats"
+
+	-X<num>:  Must have done "dvstats" on previous run
+	  <num> = 0,1:  Use prof-dir-feedback w/cnts.
+	  <num> = 2,3:  Use prof-dir-feedback w/prob.
+	  <num> = 0,2:  Generate code for 0-count targets only if executed.
+	  <num> = 1,3:  Always generate code for 0-count targets.
+
+	-Y: STB r3,X ==> STB   r3,x          | STH r3,X ==> STH   r3,x
+	    LBZ r4,X ==> RLINM r4,r3,0,24,31 | LHZ r4,X ==> RLINM r4,r3,0,16,31
+	    No LD-VER needed, but copy-prop info for r3 not go to r4
+
+Summary statistics are displayed to "stdout" and are
+appended to the file "daisy.stats".  Cache simulation
+results are placed in the file "cache.out", while the
+cache configuration is read from the file "cache.config"
+in the current directory or from the directory specified by
+the CACHE_CONFIG environment variable.
+
+Additional configuration parameters are read from the
+file "daisy.config", if it exists.  For example "num_alus"
+specifies the number of ALUS.  The format of "daisy.config"
+is one quantity (e.g. "num_alus") per line followed by
+whitespace and the numerical value, e.g. 16.  Blank lines
+are ignored and # is a comment prefix for the line.  If
+"daisy.config" exists in the current directory, it is used,
+otherwise if "daisy.config" exists in the directory specified
+by the environment variable DAISY_CONFIG, it is used.  Defaults
+are used and a warning issued if neither is present.
+
+The -L and -M can be very useful as debugging aids.
+"daisy" can be run several times with the target program
+using binary search to assign values to -L<num>.  For example use
+-L1000 -M2 to see if the DAISY translated program crashes in the first
+1000 page crossings.  If it does, then try -L500 -M2 in binary search
+fashion.  Continue this until the precise page causing the crash is
+located.  Assume the last value for which the program runs correctly
+is -L319.  Then do an additional run with -L319 -M1 to determine the
+PowerPC address of the page entry causing the problem.
+
+NOTE:  The -H and -J flags used to be used for similar purposes, but
+       use of -L and -M is much preferred.
+\end{verbatim}
+\end{footnotesize}
+\caption{(2) Usage info from invoking {\tt daisy} with no arguments.}
+\label{fig-daisy-info-2}
+\end{figure}
+
+The {\bf DAISY} executable is called {\tt daisy}.  A summary of {\tt
+daisy} usage and its flags can be obtained by typing {\tt daisy} with
+no arguments.  This summary is also reproduced in
+Figures~\ref{fig-daisy-info-1} and~\ref{fig-daisy-info-2}.
+
+In order to use {\tt daisy}, the {\tt datasize} limit must be at least
+256 Mbytes.  Under {\it csh} or {\it tcsh}, this can be accomplished
+via the command {\tt limit datasize 512000 kbytes}.  It is also useful
+to have a large amount of paging space, at least 256 Mbytes, and
+preferably 400 Mbytes.  The amount you currently have may be
+determined by typing {\tt lsps -a}.  Contact your system administrator
+if you need to increase your amount.
+
+The most basic invocation of {\tt daisy} is to give it the name of the
+executable which is to be translated and simulated.  For example, to
+translate {\tt /bin/ls}, one types
+
+\begin{verbatim}
+    daisy /bin/ls
+\end{verbatim}
+
+The immediate result is the same as that from invoking {\tt /bin/ls}
+directly, i.e. the contents of the current directory are displayed
+on the screen, albeit more slowly.  In addition, {\tt daisy} appends
+a variety of statistics about its translation of {\tt /bin/ls} to
+a file called {\tt daisy.stats} in the current directory.  {\tt daisy}
+also creates 3 additional files in the current directory:
+
+\begin{verbatim}
+   ls.vliw_perf_ins_cnts
+   ls.vliw_perf_ins_info
+   ls.vliw_spec_ins_info
+\end{verbatim}
+
+These binary files are used to create a myriad of statistics using a
+post-pass tool called {\tt dvstats}.  {\tt dvstats} takes as 
+arguments the base name of the translated program, as well as the
+directory in which the 3 files above may be found.  For example,
+
+\begin{verbatim}
+   dvstats ls .
+\end{verbatim}
+
+\noindent The final ``.'' specifies that dvstats should look in the
+current directory for the 3 files listed above.  Running {\tt dvstats}
+produces several more files, all with the prefix {\tt ls.}.  Probably
+the most interesting is {\tt ls.histo} which has the infinite cache
+ILP attained by the translated code.  Infinite cache ILP is measured
+simply as the ratio of {\it PowerPC} instructions used to execute the
+original program ({\tt /bin/ls}) to the number of VLIW instructions
+used to execute the original program.  The {\tt ls.histo} file also
+reports how many and what type of operations were packed into each
+VLIW instruction.  Other files report opcode frequencies and critical
+paths through the code, along with the ILP attained on each of those
+paths.  These matters are discussed in more detail in
+Section~\ref{sect-post-proc}.
+
+One other file is of significant interest here.  If the {\tt -N} flag
+is given with {\tt daisy}, a dump of the VLIW code is produced in a
+file called {\tt daisy.vliw}.  This file can be more than a megabyte in
+size, even for a program like {\tt /bin/ls} because shared library
+code (e.g. {\bf printf} and {\bf malloc}) is translated too, and
+because there is a significant explosion in code size -- typically a
+factor of 4, but varying widely.  Note too that any previous {\tt
+daisy.vliw} file in the current directory is destroyed when the {\tt
+-N} flag is specified.  Section~\ref{sect-vliw-dump} gives a
+description of the syntax of the VLIW instructions in {\tt daisy.vliw}
+
+\subsection{Internal View}
+\label{sect-internal-view}
+
+\begin{figure}
+\begin{center}
+\ \psfig{figure=fig/daisy_cg1.eps}
+\end{center}
+\caption{Initialization, configuration, and start of translation under
+{\tt daisy}.}
+\label{fig-daisy-init-cg}
+\end{figure}
+
+\begin{figure}
+\begin{center}
+\ \psfig{figure=fig/daisy_cg2.eps}
+\end{center}
+\caption{Steady state of {\tt daisy} mixing execution and translation.}
+\label{fig-daisy-steady-cg}
+\end{figure}
+
+Figures~\ref{fig-daisy-init-cg} and~\ref{fig-daisy-steady-cg} depict
+high level call-graphs of what {\tt daisy} does internally as it
+translates {\tt /bin/ls}.  Figure~\ref{fig-daisy-init-cg} depicts how
+{\tt daisy} initializes and configures itself, then begins
+translating.  Figure~\ref{fig-daisy-steady-cg} depicts {\tt daisy} in
+the steady-state when it is mixing translation and execution of {\tt
+/bin/ls}.  Note that the shaded portion of
+Figures~\ref{fig-daisy-init-cg} and~\ref{fig-daisy-steady-cg} is
+common and corresponds to the actual work of translation.  Below is a
+fuller description of the internal processing depicted in
+Figures~\ref{fig-daisy-init-cg} and~\ref{fig-daisy-steady-cg}.
+
+\begin{itemize}
+
+  \item The {\bf main()} function is in {\tt main.c} (Actually {\bf
+	main2()} is in {\tt main.c}.  {\bf main()} is in {\tt
+	r13\_base.s} so as to properly setup the stack for the
+	translated program, e.g. {\tt /bin/ls}.  The value of the
+	stack to use for the translated program is the {\tt sp\_val}
+	parameter passed to {\bf main2()} by {\bf main()}.)
+
+  \item {\bf main2()}, first checks for any flags such as {\tt -N} via
+	a call to {\bf handle\_flags()} in {\tt flags.c}.
+
+  \item {\bf main2()} then opens the file to be translated (e.g {\tt
+	/bin/ls}) and reads the header in order to find the number
+	of instructions in the text section.  (This is mainly
+	used for informational purposes to know what fraction of
+	the execution time was spent in shared libraries.)
+
+  \item {\bf main2()} then loads the target program into memory via a
+	call to {\bf load\_prog\_to\_exec()}, which in turn invokes the
+	AIX function {\bf load()}, which reads the target XCOFF file and
+	performs all necessary relocation.
+
+  \item {\bf main2()} then does a variety of initializations via the
+	call to {\tt init\_everything()}.  One of these
+	initializations is to call {\tt vliw\_init()} in {\tt vliw.c}.
+	{\tt vliw\_init()} in turn reads additional configuration
+	information such as the number of registers and function units
+	via a call to {\bf read\_config()} in {\tt rd\_config.c},
+	which in turn reads this information from the file {\tt
+	daisy.config}.  If the environment variable, {\it
+	DAISY\_CONFIG} is set, {\bf read\_config()} assumes it
+	specifies the directory in which to look for {\tt
+	daisy.config}.  If {\it DAISY\_CONFIG} is not set, then {\bf
+	read\_config()} looks for {\tt daisy.config} in the current
+	directory.  If {\tt daisy.config} does not exist, {\bf
+	read\_config()} provides a default configuration.
+
+  \item Note that {\bf DAISY} has its own version of {\bf malloc()}.
+	If {\bf DAISY} invokes {\bf malloc()}, it perturbs how the
+	translated program runs.
+
+  \item {\bf main2()} then does various initializations dealing with
+	profile-directed feedback and tracing the branches in the
+	original {\it PowerPC} program (e.g. {\tt /bin/ls}).
+
+  \item Next {\bf main2()} makes sure that the VLIW registers
+	match the {\it PowerPC} registers at the start of the program,
+	e.g.  VLIW {\tt r3} and {\it PowerPC} {\tt r3} both contain
+	{\bf argc}.  The call to {\bf setup\_regs()} which does this,
+	also sets up several other values for use during simulation.
+	Section~\ref{sect-vliw-dump} discusses this in more detail.
+
+  \item In order to run correctly, the translator and the
+	translated/simulated program must use different stack
+	pointers.  Thus {\bf main2()} sets up the simulator
+	(and hence the translated program (e.g {\tt /bin/ls})) to use
+	the translator's stack pointer ({\tt sp\_val}).  When the
+	translator is re-invoked to translate subsequent pages it will
+	use its own stack pointer pointing to a statically allocated
+	stack.  This is done because we know that the translator can
+	make do with a small fixed stack size, but we do not know if
+	this is true of the translated program.
+
+  \item {\bf main2()} then sets up a couple of additional values
+	for use by the simulator in {\bf r13\_area} and invokes {\bf
+	xlate\_entry()}.
+
+  \item As depicted in Figure~\ref{fig-daisy-steady-cg}, {\bf
+	xlate\_entry()} is the main entry point of the translator, and
+	takes one argument, the address from which it is to translate.
+	Subsequently when a page needs translation, the simulator
+	branches to {\bf xlate\_entry\_raw()}, in {\tt r13\_base.s}.
+	{\bf xlate\_entry\_raw()} (1) saves registers live during the
+	execution of simulated VLIW code, (2) sets up registers and
+	the stack frame for use by normal C code such as the {\bf
+	xlate\_entry()} function, and (3) calls {\bf xlate\_entry()}.
+	When {\bf xlate\_entry()} returns, it passes in register {\tt
+	r3} the address of the simulation code for the VLIW code just
+	generated.  {\bf xlate\_entry\_raw()} then restore registers
+	used during exeuction of simulated VLIW code and then branches
+	to the address passed in register {\tt r3}.
+
+  \item {\bf xlate\_entry()} does some initialization of its own, then
+	enters a doubly nested {\tt while} loop.  The outer {\tt
+	while} loop checks via a call to {\bf
+	get\_highest\_prio\_cont()} in {\tt contin.c}, if there are any
+	open paths on the page that remain to be translated.
+	Initially there is one such open path --- the entry point to
+	the page.  Translation on a path stops whenever a branch is
+	encountered.  If the branch is conditional, two new path
+	continuations --- the target and the fall-through --- are
+	added to the open path list (assuming that both are on the
+	current page).  Additions to the open path list are made via
+	calls to {\bf add\_to\_xlate\_list()}.  Unconditional branches
+	of course place only their target in the path list~\footnote{
+	{\tt Branch-and-link} instructions can optionally place the
+	fall-through path in the list as well.}.
+
+  \item Once a path continuation is found, several checks are made as
+	to whether {\it PowerPC} operations from this path should be
+	scheduled into earlier VLIW instructions --- thus increasing
+	parallelism, or if a new scheduling region should begin at the
+	current operation --- thus decreasing code explosion.
+
+  \item In either case, scheduling of {\it PowerPC} operations from the
+	current path is done in the inner {\bf while (TRUE)} loop.
+
+  \item A call to {\bf get\_opcode()} partially parses the {\it PowerPC}
+	operation.
+
+  \item Then several special types of {\it PowerPC} operation are
+	checked for --- {\it illegal ops, load/store multiple ops,}
+	and {\it load/store update ops.}
+
+  \item Scheduling on this path stops if there is an {\it illegal op.}
+	If execution comes here, something is probably wrong with the
+	original program.  If this path is actually executed, the
+	simulator will print a message that an {\it illegal op} was
+	encountered and terminate the run.
+
+  \item {\it Load/store multiple} and {\it load/store update}
+	operations are split into simpler primitives and then
+	scheduled like any other operation.  There is one caveat to
+	this.  {\tt lwsx}, {\tt stwsx}, (and {\tt lscbx}) are not
+	split.  Instead {\bf DAISY} acts as if these were VLIW
+	primitive operations.  {\it This should change at some point!}
+
+  \item For other {\it PowerPC} operations, parsing is completed by a call
+	to {\bf set\_operands()}.  Another illegal check must be
+	made here because some operands of {\tt mtspr} and {\tt mfspr}
+	are illegal, while others are not.
+
+  \item Legal opcodes are sent to the routine {\bf
+	xlate\_opcode\_p2v()}.
+
+  \item {\bf xlate\_opcode\_p2v()} divides instructions into {\it
+	branches} and {\it ALU ops}.
+
+  \item A variety of optimizations can be done with ALU and memory
+	operations.  These include {\it copy propagation, combining,
+	load-motion above stores, load-store alias analysis,} and {\it
+	dead-code elimination.}  All of these are checked by {\bf
+	xlate\_opcode\_p2v()}.
+
+  \item Additional splitting of complex ALU ops into simpler ones is
+	done in {\bf xlate\_opcode\_p2v()}.  In particular {\it
+	record} form ops (e.g. {\tt and.}) that set {\bf CR0} are
+	split (e.g. to {\tt and} followed by {\tt cmpli}).  Likewise
+	{\tt rlwimi} is split and the individual pieces scheduled.
+
+  \item If none of the optimizations or splittings apply --- the most
+	common case --- {\bf xlate\_opcode\_p2v()} calculates the
+	earliest time at which the op may be scheduled due to data
+	dependences.  This is done via a call to {\bf
+	get\_earliest\_time()}, which is in {\tt vliw.c}.  {\bf
+	xlate\_opcode\_p2v()} then calls {\bf insert\_op()} to
+	schedule the operation at or after this earliest time, as
+	function unit and register availability allow.  Exactly how
+	{\tt insert\_op} does scheduling is discussed in
+	Section~\ref{sect-sched-alg}.
+
+  \item Branch operations are split into several different types, the
+	main being {\it direct onpage branches}, {\it direct offpage
+	branches}, and {\it indirect branches} through the {\tt
+	Counter} or {\tt LinkReg}.  {\tt RFI} -- return from
+	interrupt, {\tt SC} (or {\tt SVC}), and {\tt traps} are also
+	handled, although {\tt SC} and {\tt traps} are infrequent in
+	user code and {\tt RFI} is non-existent.
+
+  \item Returning up the call chain to {\bf xlate\_entry()}, once
+	all operations on all open paths are scheduled, the outer
+	{\tt while} loop exits.
+
+  \item {\bf xlate\_entry()} then checks if the user wants a dump of the
+	VLIW code.  The {\tt -N} flag discussed above in
+	Section~\ref{sect-user-view} corresponds to the {\bf
+	do\_vliw\_dump} variable.
+
+  \item In order to generate statistics at the end of a program run,
+	{\bf DAISY} must know when a program ends.  Programs usually
+	end via a kernel service call to location {\bf 0x3600} (or
+	{\bf 0x37D0} in AIX 4.3).  The value in register {\tt r2}
+	determines the service requested.  Thus when the {\bf DAISY}
+	simulator sees that it is executing the translation of
+	location 0x3600, it checks if {\tt r2} contains the {\bf
+	\_exit()} service value.  If so, it writes its statistics to
+	disk, as described above in Section~\ref{sect-user-view}, and
+	then terminates.  The call to {\bf dump\_exit\_chk()} sets up
+	the simulator to perform this check.
+
+  \item The {\bf DAISY} simulator is actually a translation of the
+	VLIW code back to {\it PowerPC} operations which then run
+	natively on the {\it PowerPC} machine.  This is detailed in
+	Section~\ref{sect-simul-code}. The call to {\bf
+	vliw\_to\_ppc\_simcode()} performs this translation.  The
+	simulation code not only models the execution of VLIW
+	instructions, but also keeps count of how many instructions
+	execute, and can also call a cache simulator.
+
+  \item We want subsequent branches to the entry point of this page to
+	go to the translation we just created, not to the translator.
+	In order to do this {\bf DAISY} maintains a hash table mapping
+	{\it PowerPC} instruction address to their corresponding VLIW
+	translation.  The call to {\bf add\_page\_hash\_entries()}
+	creates this mapping.  Note that not only the entry point
+	of the page goes into this hash table, but any other points
+	at which a new scheduling region is begun, as was described
+	above.
+
+  \item After this, {\bf xlate\_entry()} returns to the {\bf main2()}
+	function.  {\bf main2()} knows that simulated code for the
+	first group -- the entry point of a program is always
+	at the start of {\bf xlate\_mem} -- the start of translation
+	memory, and sets up an AIX-style function pointer so that
+	an indirect branch can made to this first translation.
+
+  \item {\bf main2()} then branches to this address to begin
+	executing the translated program (e.g {\tt /bin/ls}).
+
+  \item When the translated program comes to a new page or performs
+	an indirect jump, it will re-invoke {\bf xlate\_entry()} to
+	do the same tasks we just outlined for the first page.
+
+  \item Subsequent invocations of {\bf xlate\_entry()} actually occur
+	indirectly, as can be seen in
+	Figure~\ref{fig-daisy-steady-cg}.  The simulation code
+	branches to {\bf xlate\_entry\_raw()} which is in {\tt
+	r13\_base.s}.
+
+  \item {\bf xlate\_entry\_raw()} saves {\it PowerPC} registers that
+	may be live (e.g. {\tt r1-r12}, {\tt fp0-fp3}, and the {\tt
+	XER}).  It then sets up the TOC (register {\tt r2}, which is
+	used as a {\it Table Of Contents} in AIX to access global
+	variables) and stack pointer ({\tt r1}) for the translator.
+	It also copies parameters passed by the simulator to standard
+	AIX parameter registers.  For example the address to
+	translate is copied from {\tt r27} to {\tt r3}.  Upon return
+	to {\bf xlate\_entry\_raw()}, control is returned to the
+	simulated VLIW code, as described above.
+
+  \item This process continues until the simulation code detects the
+	translated program is exiting, as described above.
+
+\end{itemize}
+
+\section{VLIW Tree Instructions and Generic Machine Model}
+\label{sect-tree-ins-mach-model}
+
+\begin{figure}
+\begin{center}
+\ \psfig{figure=fig/tree_ins.eps}
+\end{center}
+\caption{Sample VLIW Tree Instruction.}
+\label{fig-vliw-tree}
+\end{figure}
+
+{\bf DAISY} currently targets a VLIW machine whose instructions are
+trees, a format developed by Ebcioglu~\cite{Ebcioglu88} and his
+collaborators over the years.  A sample tree is shown in
+Figure~\ref{fig-vliw-tree}.  There are several points to note:
+
+\begin{itemize}
+
+  \item The tree instruction splits at conditional branch
+	instructions.  The left path corresponds to the branch
+	condition being false, while the right path corresponds
+	to the branch condition being true.  In
+	Figure~\ref{fig-vliw-tree} there are two conditional
+	branches.  The edge terminating at {\tt b V2}
+	corresponds to the false path of {\tt bc CR0.eq}.  The
+	true path of {\tt bc CR0.eq} splits at the branch {\tt
+	bc CR1.lt} with the path ending at {\tt b V7}
+	corresponding to the false path of {\tt bc CR1.lt} and
+	the path ending at {\tt b V9} corresponding to the true
+	path.
+
+  \item The branch conditions are evaluated prior to executing
+	the tree.  For example, the {\tt bc CR0.eq} uses the
+	value of {\tt CR0.eq} that existed upon entry at the
+	label {\tt V1}, not the value computed by {\tt cmp
+	CR0,r4,r5}.
+
+  \item With one exception, all input values (like {\tt CR0.eq}
+	in {\tt bc CR0.eq} or {\tt r4} and {\tt r5} in {\tt add
+	r3,r4,r5}) are evaluated prior to the execution of the
+	VLIW instruction.  This is termed {\it parallel
+	semantics}, i.e. all the inputs are read in parallel at
+	the start of the VLIW instruction, and all the outputs
+	are written in parallel at the end of the VLIW
+	instruction.
+
+  \item {\it Aside:} Parallel semantics are not essential to
+	VLIW tree instructions.  Sequential semantics in which
+	each operation executes and writes its results before
+	the next executes are also possible.  However sequential
+	semantics restrict how VLIW instructions may be formed.
+	For example, it would not be legal to write {\tt CR0}
+	via the {\tt cmp} and read it via {\tt bc CR0.eq} in the
+	same VLIW, as occurs in Figure~\ref{fig-vliw-tree}.
+	Sequential semantics do have an advantage.  They allow
+	large VLIW tree instructions to be easily split into
+	smaller trees in hardware if the machine on which they
+	are running does not have sufficient function units.
+
+  \item The one exception to parallel semantics in {\bf DAISY} is
+	memory references.  Since the compiler cannot always
+	know if a store and load are independent, it must have
+	some way of guaranteeing that the load receives the
+	correct value, and that memory is updated correctly and
+	in the proper order.  One way to do this would be (1) to
+	allow at most one store per VLIW instruction and (2) to
+	allow no loads ``after'' any store in a VLIW
+	instruction.  Unfortunately, these restrictions
+	significantly reduce the amount of instruction level
+	parallelism achievable.  Thus {\bf DAISY} leaves it to the
+	hardware to insure that stores are properly sequenced to
+	memory and that loads receive the proper value, even if
+	it is from a store in the same VLIW instruction.  The
+	hardware may introduce stalls if there is too much such
+	aliasing, so it is still useful for the compiler to do
+	as much disambiguation as possible.  (Other
+	optimizations are also possible from such disambiguation
+	work.)
+
+  \item Since the tree in Figure~\ref{fig-vliw-tree} has two
+	conditional branches, there are three exits, {\tt b V2},
+	{\tt b V7}, and {\tt b V9}.  In general, there is one
+	more exit than there are conditional branches.
+
+  \item ALU and memory operations are associated with edges of
+	the tree.  In Figure~\ref{fig-vliw-tree}, there are 5
+	edges.  Whether ALU/memory operations on each edge
+	actually execute depends on the evaluation of the
+	conditional branches.  If an operation is on an edge
+	that matches conditional branch conditions, it is
+	executed, otherwise not.  For example, the {\tt and
+	r6,r5,r4} on the edge from {\tt bc CR0.eq} to {\tt b V2}
+	is executed only if {\tt CR0.eq} is not set.
+
+  \item In this way, the conditional branches in a VLIW
+	instruction act not so much as branches, but as masks
+	indicating which set of instructions in the VLIW tree
+	are to execute.  Since the branch conditions are
+	evaluated at the start of the VLIW instruction, the set
+	of ALU and memory operations to be executed can be
+	determined at the start of the instruction as well.
+
+  \item As a practical matter, each VLIW tree instruction executes in
+	one cycle, which does not leave sufficient time --- at least
+	at the frequencies we wish to achieve --- to evaluate which
+	operations should execute, and then execute them.  Thus all
+	operations in any likely implementation are executed and the
+	mask determined by the conditional branches is used to enable
+	write-back of those results which actually should have
+	executed.
+
+  \item As can be seen in Figure~\ref{fig-vliw-tree}, each VLIW
+	instruction explicitly identifies its successor
+	instructions, i.e. VLIW {\tt V2}, {\tt V7}, or {\tt V9}.
+	Thus VLIW instructions branch on every cycle.  There
+	are two problems with such branching:
+
+  \begin{itemize}
+    \item Encoding 3 (or 4) completely independent targets in a 
+	  VLIW instruction is wasteful of encoding space.
+
+    \item Fetching new instructions from a new and arbitrary
+	  location every cycle is difficult, all the more so if
+	  the conditional branch conditions must be computed to
+	  determine the next VLIW instruction to fetch.
+  \end{itemize}
+
+	To overcome these difficulties, the eventual {\bf DAISY}
+	architecture will almost certainly place restrictions,
+	on the set of successor VLIW instructions to the current
+	VLIW instruction.  One likely restriction is that all
+	successor instructions lie in the same Icache line.  If
+	this is the case, the fetch unit can begin fetching this
+	cache line immediately without waiting to see how the
+	condition codes evaluate.  Then at the end of the cycle,
+	when the condition codes have been evaluated, it can
+	pick the proper successor instruction out of the cache
+	line.  {\it The {\bf DAISY} translation software currently
+	does not take into account such restrictions.} This
+	shortcoming needs to be fixed, possibly through a
+	``final-pass'' assembler which organizes the VLIW
+	instructions --- duplicating them in some cases --- in
+	order to meet the cache line restriction.
+
+  \item Note that register {\tt r3} is written twice if the path
+	from {\tt V1} to {\tt b V7} is followed.  In such cases,
+	the operation nearer the VLIW exit takes precedence.
+	Thus, if the {\tt V1} to {\tt b V7} path is followed,
+	the {\tt nor r3,r8,r7} result takes precedence over the
+	{\tt add r3,r4,r5} result.
+	
+\end{itemize}
+
+\begin{figure}
+\begin{verbatim}
+               add   r3,r5,r5,<TRUE>
+               cmp   CR0,r4,r5,<TRUE>
+               and   r6,r5,r4,<CR0.eq FALSE>
+               or    r6,r5,r4,<CR0.eq TRUE>
+               nor   r3,r8,r7,<CR0.eq TRUE, CR1.lt FALSE>
+               xor   r5,r6,r9,<CR0.eq TRUE, CR1.lt TRUE>
+               bc    <CR0.eq FALSE>,V2
+               bc    <CR0.eq TRUE, CR1.lt FALSE>,V7
+               bc    <CR0.eq TRUE, CR1.lt TRUE>,V9
+\end{verbatim}
+\caption{Sample Predicated Code Corresponding to VLIW Tree Instruction.}
+\label{fig-vliw-pred}
+\end{figure}
+
+Note that VLIW tree instructions are quite similar to predicated
+execution, with the conditional branches in the VLIW tree
+instruction acting as predicates.  For example,
+Figure~\ref{fig-vliw-pred} shows equivalent predicated code for
+the VLIW tree instruction in Figure~\ref{fig-vliw-tree}.  Two
+points are of particular note:
+
+\begin{itemize}
+
+  \item Operations may have multiple predicates. For example the
+	{\tt xor} operation from the VLIW tree instruction in
+	Figure~\ref{fig-vliw-tree} has two predicates, {\tt
+	<CR0.eq TRUE, CR1.lt TRUE>}, in
+	Figure~\ref{fig-vliw-pred}.
+
+  \item Branches to the next VLIW tree instruction become
+	conditional branches, again possibly with multiple
+	conditions, for example, {\tt bc <CR0.eq TRUE, CR1.lt
+	TRUE>,V9} in Figure~\ref{fig-vliw-pred}.
+
+\end{itemize}
+
+\noindent {\it Another possible task in the {\bf DAISY} compiler} is
+to make it support an architecture with explicitly predicated
+operations, as in Figure~\ref{fig-vliw-pred}.
+
+There is of course more to the {\bf DAISY} machine model than simply
+the instruction model.  Many of these other parameters, however
+are more easily parameterized:
+
+\begin{itemize}
+
+  \item The {\bf DAISY} compiler currently supports machines having
+	from 64 to 256 general purpose registers, 64 to 256 floating
+	point registers, and 64 to 256 condition register bits (or
+	equivalently for {\it PowerPC}, 16 to 64 {\it 4-bit} condition
+	register fields).  The maximum number is specified in the file
+	{\tt max\_resrcs.h} and the number used during translation can
+	be set in the {\tt daisy.config} file as described in
+	Section~\ref{sect-internal-view}.  ({\bf Caution:} {\it There
+	are currently bugs if more than 64 of any one kind of
+	registers are specified.})
+
+  \item The {\bf DAISY} compiler currently supports machines having up
+	to 16 ALU and/or memory operations plus 8 conditional
+	branches per VLIW tree instruction.  (Larger numbers
+	should be possible, as these values are generally
+	parameterized in the code, however there seems to be
+	some bug $\ldots$.)  The exact numbers for a particular
+	run are also set in {\tt daisy.config}.
+
+  \item Function units can be clustered, so that results
+	computed in a cluster are available as inputs in the
+	next cycle within that cluster, but only after a 1 cycle
+	delay in other clusters.  The eventual {\bf DAISY}
+	architecture will likely be clustered, and the software
+	may need to be modified to support the precise model
+	adopted.  Much of the code for clustering is in {\tt
+	cluster.c}.  The clustering parameters are set in {\tt
+	daisy.config} and may be changed for each translation.
+
+  \item This version of {\bf DAISY}  does not distinguish between ALU types,
+	and in particular does not distinguish between integer
+	and floating point operations.
+
+  \item Instruction latencies are configured at compile time,
+	not execution time.  (That is they are configured when
+	{\bf DAISY} is compiled, not when {\bf DAISY} is run.)  Several sets
+	of latencies have been used, and these are controlled by
+	{\tt \#ifdef} statements in the file {\tt latency.h}.
+
+  \item {\bf DAISY} can model up to 3-level cache and TLB hierarchies.
+	Specifying the {\tt -G} flag with {\tt daisy} enables cache
+	simulation.  When cache simulation is enabled, {\bf DAISY}
+	reads the cache configuration from the file {\tt cache.config}
+	and the TLB configuration from the file {\tt tlb.config}.
+	Both {\tt cache.config} and {\tt tlb.config} are picked up
+	from the directory specified by {\tt DAISY\_CONFIG} or from the
+	current directory, just as is the case with {\tt daisy.config}.
+	The cache and TLB simulation functions are the same and are
+	mostly in the file {\tt cache\_simul.c}.  The TLB's just look
+	like an independent cache hierarchy with 4K lines.  Cache
+	statistics are written to the file {\tt cache.out}, while TLB
+	statistics are written to the file {\tt tlb.out}.
+	
+
+\end{itemize}
+
+\section{{\bf DAISY} Scheduling Algorithm}
+\label{sect-sched-alg}
+
+\begin{figure}
+
+\begin{minipage}[t]{2.9in}
+\begin{center}
+\ \psfig{figure=fig/p2v-1.eps,width=2.7in,height=3.3in}
+\end{center}
+\end{minipage}
+%%
+\hspace*{0.05in}
+%%
+\begin{minipage}[t]{2.9in}
+\begin{center}
+\ \psfig{figure=fig/p2v-2.eps,width=2.7in,height=3.3in}
+\end{center}
+\end{minipage}
+\caption{Example of conversion from {\it
+PowerPC} code to VLIW tree instructions.}
+\label{fig-ppc-to-vliw}
+\end{figure}
+
+\begin{figure}[htb]
+\begin{center}
+\ \psfig{figure=texfig/p2v-txt.eps,height=8.00in}
+\end{center}
+\caption{Description of conversion from {\it PowerPC} to VLIW.}
+\label{fig-ppc-to-VLIW-expl}
+\end{figure}
+
+The scheduling algorithm is at the heart of {\bf DAISY} translation
+from {\it PowerPC} code to VLIW code, as it is the basic mechanism for
+extracting instruction level parallelism from {\it PowerPC} code.  The
+algorithm is illustrated in Figure~\ref{fig-ppc-to-vliw}.  A detailed
+description of why each scheduling step is performed is contained in
+Figure~\ref{fig-ppc-to-VLIW-expl}.  However, there are three major
+points:
+%%
+  \begin{itemize}
+
+  \item Operations 1--11 of the original {\it PowerPC} code are
+	scheduled in sequence into VLIW's.  It turns out that two
+	VLIW's suffice for these 11 instructions.
+
+  \item Operations are always added to the end of the last VLIW
+	on the current path.  If input data for an operation are
+	available prior to the end of the last VLIW, then the
+	operation is performed as early as possible with the
+	result placed in a renamed register (that is not
+	architected in the {\it PowerPC}).  The renamed register is
+	then copied to the original {\it PowerPC} register at the end
+	of the last VLIW.  This is illustrated by the {\tt xor}
+	instruction in step 4, whose result is renamed to {\tt
+	r63} in VLIW1, then copied to the original destination
+	{\tt r4} in VLIW2.  By having the result available early
+	in {\tt r63}, later instructions can be moved up.  For
+	example, the {\tt cntlz} in step 11 can use the result
+	in {\tt r63} before it has been copied to {\tt r4}.
+	(Note that the scheduler assumes the parallel semantics
+	described in Section~\ref{sect-tree-ins-mach-model}, in
+	which all operations in a VLIW instruction read their
+	inputs before any outputs from the current VLIW
+	instruction are written.)
+
+  \item The renaming scheme just described places results in
+	architected {\it PowerPC} registers in original program order.
+	Stores and other operations with non-renameable
+	destinations are placed at the end of the last VLIW on
+	the current path.  In this way, precise exceptions can
+	be maintained.
+
+  \end{itemize}
+%%
+
+The {\bf DAISY} code for performing this scheduling is contained
+largely in the file {\tt vliw.c}, and in particular, the
+function {\bf insert\_op()}.  {\bf insert\_op()} is passed a
+{\it PowerPC} operation to schedule and an earliest time at which that
+operation may be scheduled.  To get this earliest time, the
+caller of {\bf insert\_op()} typically calls the function {\bf
+get\_earliest\_time()}, which is also in {\tt vliw.c}.  {\bf
+get\_earliest\_time()} returns the earliest time at which the
+current {\it PowerPC} operation may be scheduled based on data
+dependences with already scheduled operations.
+
+The first VLIW in a group has time 0, the subsequent VLIW(s),
+time 1, etc.  There may be multiple immediate successors if the
+fist VLIW instruction contains a conditional branch.  {\bf DAISY} does
+not assume that the hardware has interlocks and if it encounters
+a long latency operation such as {\tt divide} and no useful work
+to be done between the {\tt divide} and its use, it pads the gap
+with empty VLIW instructions.
+
+{\bf insert\_op()} first tries to place the {\it PowerPC} operation at
+the end of the VLIW instruction at the {\it earliest time}.  To
+do this, {\bf DAISY} requires (1) that a function unit be free on
+which to compute the result, and (2) that a non-{\it PowerPC}
+architected register be available to place the result if the
+{\it earliest time} is earlier than the current VLIW
+instruction.  If these function unit or register constraints do
+not permit placing the operation at the {\it earliest time}, the
+next time is tried, until eventually a VLIW instruction is found
+in which the {\it PowerPC} operation may be scheduled.  This is
+guaranteed to happen at some point, because if all of the
+existing VLIW instructions on the path are full, {\bf
+insert\_op()} creates a new empty VLIW instruction and appends
+it to the current path.  Note that this scheduling algorithm
+never needs to spill registers, since having a register for the
+result is a requirement of scheduling an operation.  Of course,
+if the {\it PowerPC} operation is scheduled at the end of the current
+VLIW instruction or later, it immediately places result in the
+{\it PowerPC} destination register.
+
+Although it may not be clear from this example, the scheduling
+algorithm produces groups of VLIW tree instructions which are
+themselves trees.  That is the groups are trees of trees.  The
+reason for this is in the second bullet above: namely {\it PowerPC}
+operations or their {\it commit} from a rename register are
+always scheduled in the last VLIW instruction on the current
+path.  Even if the {\it PowerPC} operation has been seen before on
+some other path, it is replicated again at the end of the
+current path.  Thus VLIW groups have no {\it join} points.
+
+Sometimes, of course, it is essential to have a join point.
+Loops for example need a join at their entry, or the scheduling
+algorithm would unroll them forever.  This is accomplished
+by terminating the current path and starting a new VLIW group
+after a particular {\it PowerPC} operation has been seen sufficiently
+many times.
+
+The data structures used by the scheduling algorithm, in
+particular the representation of VLIW tree instructions is
+described in Section~\ref{sect-data-struc}.
+
+\section{{\bf DAISY} Optimizations}
+
+\subsection{Combining}
+
+The combining optimization essentially does symbolic
+arithmetic, and is very useful for noting when address
+expressions are the same, as well as for generating induction
+variable values in {\tt for} loops, without serialization.
+For example, a loop body may have a statement like {\tt addi
+r3,r3,4}.  Thus if {\tt r3} has the value {\tt r3}$_0$ in
+iteration 0, then in iteration 3, {\tt r3} will have the value
+{\tt r3}$_0+12$.  Combining determines this and eliminates
+serialization on the {\tt addi r3,r3,4} instruction.  This
+then allows iteration 3 operations, which have no other
+data dependences to be scheduled immediately.
+
+Address expressions, particularly those involving the stack
+also benefit from combining.  The stack is often bumped at the
+start of a procedure, e.g. {\tt addi r1,r1,-96}.  This may be
+followed by a load operation, e.g. {\tt lwz r4,8(r1)}.
+Combining notes that this load operation can be scheduled
+immediately (before the {\tt addi}) as {\tt lwz r4,-88(r1)}.
+
+There are some subtle caveats on the use of combining.  For
+example, there are some cases when wrap-around from 0xFFFFFFFF
+to 0x00000000 makes combining impermissible.  One such case
+involves {\tt addic}.  For example, assume that {\tt r4} is
+initially 0xFFFFFFFF, and a loop has the instruction {\tt
+addic r4,r4,1}.  Then the first time that this instruction is
+executed, the {\tt CA} bit of the XER is set since the new
+value wraps around to 0x00000000.  However, the second
+execution of this instruction clears the {\tt CA} bit since
+there is no carry going from 0 to 1.  However, combining might
+rewrite this second iteration as {\tt addic r63,r4,2}, which
+would incorrectly set the {\tt CA} bit.
+
+DAISY currently implements combining by maintaining a linked
+list of combined values for each GPR.  Each entry in this list
+contains
+
+\begin{itemize}
+
+  \item A GPR number,
+  \item A time,
+  \item A displacement,
+  \item A pointer to the next list element.
+
+\end{itemize}
+
+This list is kept in reverse chronological order, and thus to
+find the proper base register and displacement at a particular
+time, the list is searched until the {\it time} is less than
+or equal to the time of interest.  The desired value of the
+current GPR is then obtained from the sum of the {\it GPR
+number} and {\it displacement} in the list.  This linked list
+is added to whenever a combinable operation is encountered.
+For example, {\tt addi} and {\tt oril rx,rx,0} (or any {\tt
+copy}) are combinable operations.  This list is associated with
+the {\bf TIP} structure and is called {\tt gpr\_val}.
+
+\subsection{Copy Propagation}
+
+Copy propagation is essentially a special case of combining
+where the displacement must always be 0.  However, it is useful
+to separate the two, because not all operations have a
+displacement field.  For example, the operation {\tt xor
+r3,r4,r5} is not helped if we know that at a particular time
+{\tt r4} is equivalent to {\tt r63+8}.  However, if we know
+that {\tt r4} is equivalent to {\tt r61}, then we can schedule
+the {\tt xor} early as {\tt xor r60,r61,r5} (assuming that
+{\tt r60} is an available destination register and that {\tt
+r5} maps to itself at the time the {\tt xor} is scheduled.
+Copy propagation information is kept for each GPR, FPR, and
+CCR in a linked list akin to that used for combining.  The
+only difference is that there is no displacement field.  These
+lists are part of the {\bf TIP} structure and are called {\tt
+gpr\_rename}, {\tt fpr\_rename}, and {\tt ccr\_rename}.
+
+\subsection{Load-Store Must Aliases}
+\label{sect-must-alias}
+
+There are many cases, particularly in unoptimized code where
+it can be easily proven that a particular load refers to the
+same location as a previous store encountered on this path.
+For example:
+
+\begin{verbatim}
+   xor    r3,r9,r10
+   stw    r3,8(r1)
+   ...
+   lwz    r5,8(r1)
+   addi   r6,r5,1
+\end{verbatim}
+
+In such cases, operations depending on the result of the {\tt
+load} can be aggressively scheduled using the source of the
+{\tt store} operation.  In the example above, the {\tt addi}
+instruction could be scheduled immediately after the {\tt xor}
+as {\tt addi r63,r3,1}, i.e. the {\tt addi} need not serialize
+on the memory accesses.  This is true even if there are other
+stores between the {\it must-alias} load and store.  If some
+such store writes to the same memory location, then whatever
+method is used to ensure memory consistency (e.g. load-verify)
+will raise an exception, and the {\tt addi} result in {\tt
+r63} will be discarded.  However, in the normal case, where
+there is no such problem store, the {\tt addi} is computed far
+earlier than it was in the original code.  We sometimes refer
+to this optimization as {\it load-store telescoping}.
+
+These load-store {\it must-aliases} benefit significantly from
+combining and copy-propagation.  Combining and copy-propagation
+make it easy to determine if address expressions are equivalent
+even if they do not refer to the same register.  Furthermore,
+{\it load-store telescoping} can be done through multiple sets
+of stores and loads.
+
+{\bf DAISY} implements its {\it must-alias} analysis via the
+{\tt stores} field of the {\bf TIP} structure.  The {\tt stores}
+field is a list of all the {\tt stores} which have occurred on
+this path through the group.  Whenever a load is encountered,
+its address is compared to those in {\tt stores} for a match.
+In the case of multiple matches, the latest match, of course
+wins.
+
+\subsection{Load-Verify}
+\label{sect-load-verif}
+
+In order to get reasonable ILP, it is essential to execute load
+instructions as early as possible, and not just in those cases
+where {\it must-alias} can be proven.  Since the translator
+cannot be certain when the memory location is ready, {\it as
+early as possible} in this context means when all of the
+register inputs to the load are ready.  (There are exceptions
+such as {\tt sync} operations which order memory accesses, but
+we will ignore those here.)
+
+Such speculative scheduling of loads requires some means to
+check whether the loaded value was correct.  The {\tt load-verify}
+instruction is one way of performing this check.  Whenever a load
+operation is scheduled speculatively (and moves past at least one
+store), a {\tt load-verify} instruction is inserted in the original
+order.  This {\tt load-verify} instruction reloads the value
+and checks whether it matches the original value.  If so, execution
+continues normally.  If not, a {\tt load-verify exception trap} 
+occurs, and the {\bf DAISY} VMM retranslates starting at the problem
+load.  When this new translation is executed, the load executes
+first and gets the correct value.
+
+If a particular {\tt load} repeatedly incurs such traps, {\bf
+DAISY} retranslates the original group without speculating the
+load instruction.  Currently {\bf DAISY} does this if a
+particular load traps 10 times.  Such a retranslate policy
+drops the number of {\tt load-verify traps} from hundreds of
+millions to hundreds in the SPEC95 benchmarks.
+
+Memory mapped I/O locations present a particular problem for
+speculative loads.  Such locations normally cannot be read or
+written speculatively because they can have real physical side
+effects such as displaying a character on the screen or
+launching a missile.  (Even loads can have such side effects.
+For example some I/O cards have only 1 address, and in order
+to read multiple values from that address, sequence through
+the set of values read from that address.)  Thus, any hardware
+on which speculative loads are supported must be able to
+recognize such I/O accesses and quash them.  On {\it PowerPC},
+this can be done via the WIMG bits, for example.
+
+\subsection{Dead Code Elimination}
+
+{\bf DAISY} employs a very simple and limited form of dead
+code elimination.  It notes whether a register has already
+been written on the current path through the current VLIW
+instruction.  If so, then the previous write is dead and is
+deleted.  
+
+Actually there is one exception even to this simple scheme.
+If the previous write to the register, also wrote something
+else, then it generally cannot be deleted.  For example, if
+the previous instruction writing {\tt r3} was {\tt addic
+r3,r4,1} and the current instruction is {\tt xor r3,r9,r10},
+then the {\tt addic} cannot be deleted because the {\tt CA}
+bit would not then be set in the {\tt XER}.  However, leaving
+two or more writes to a single GPR can be problematic for some
+implementations which logically {\tt OR} the bits of each
+operation trying to write to a register.  In this example, the
+{\tt addic r3} value and the {\tt xor r3} value would be
+incorrectly {\tt OR}'ed together for such implementations.
+
+\subsection{Unification}
+
+
+As noted in Section~\ref{sect-sched-alg}, the scheduler forms
+groups of which are trees of tree instructions (at least in
+the most general case).  Thus the same {\it PowerPC} operation
+may be represented multiple times in the same group, if it is
+past one or more join points in the {\it PowerPC} code.  Such
+operations may be aggressively scheduled from multiple paths
+so that they are at the same control point in the VLIW code.
+For example, consider the following {\it PowerPC} code:
+
+\begin{verbatim}
+    nor  r7,r22,r23
+    cmpi cr0,r31,0
+    beq  L1
+    xor  r5,r7,r8
+    b    L2
+L1:
+    and  r9,r7,r10
+L2:
+    addi r3,r4,1
+\end{verbatim}
+
+The final {\tt addi} instruction is common to both paths
+through this group, and hence we may get VLIW code such as:
+
+\begin{verbatim}
+V1:
+         nor  r7,r22,r23
+         cmpi cr0,r31,0
+         addi r63,r4,1
+         addi r62,r4,1
+         b    V2
+
+V2:
+         beq  VL1
+   VL1:  xor  r5,r7,r8
+         or   r3,r63,r63
+         b V3
+         and  r9,r7,r10
+         or   r3,r62,r62
+         b V4
+         
+
+V3:      b    OFFGROUP
+
+V4:      b    OFFGROUP
+\end{verbatim}
+
+It is unnecessary for {\tt V1} to have two computations of
+{\tt addi rx,r4,r1}.  The unification optimization tracks the
+PowerPC address from which each scheduled instruction comes
+and notes whether some other path has already computed this
+value.  If another path has computed the value, and the
+destination register (e.g. {\tt r63}) is unused all along
+the path where it is now needed then the operations may
+be {\it unified}.  In other words, the VLIW code would be
+
+\begin{verbatim}
+V1:
+         nor  r7,r22,r23
+         cmpi cr0,r31,0
+         addi r63,r4,1
+         b    V2
+
+V2:
+         beq  VL1
+   VL1:  xor  r5,r7,r8
+         or   r3,r63,r63
+         b V3
+         and  r9,r7,r10
+         or   r3,r63,r63
+         b V4
+         
+
+V3:      b    OFFGROUP
+
+V4:      b    OFFGROUP
+\end{verbatim}
+
+Actually, a variety of other conditions must be met in order
+to unify operations.  For more information, look at the {\tt
+unify.c} file.  These restrictions sufficiently limit the
+number of times when unification may be employed, so as to
+yield a relatively small gain from its use.
+
+\subsection{Unrolling}
+
+Because of the limited time available for translation, {\bf
+DAISY} does not currently do software pipelining.  It instead
+unrolls several times so as to get good overlap among the
+original loop iterations.  To do this, {\bf DAISY} checks if
+the {\it PowerPC} instruction currently being translated has
+been seen along this path previously.  If it has, then this
+path contains a loop in the original {\it PowerPC} code.
+After passing the loop header $N$ times (where $N$ may
+be specified in the {\tt daisy.config} file and is typically
+2), {\bf DAISY} serializes.
+
+That is, {\bf DAISY} starts a new group at this loop header
+address.  This has the effect of peeling the first $N$
+iterations from the loop, and is useful for small iteration
+count loops.  This new group formed by {\bf DAISY} gets $M$
+copies of the loop body and then loops back to the start of
+this group.  $M$ is also specified in {\tt daisy.config} and is
+typically 4.
+
+\section{{\bf DAISY} Data Structures}
+\label{sect-data-struc}
+
+The two most fundamental data structures used by {\bf DAISY} are in
+the file {\tt vliw.h}.  They are the {\bf VLIW} {\tt struct}
+defining a VLIW tree instruction and {\bf TIP}, the {\tt struct}
+which defines an edge of a VLIW tree instruction.  (For a
+description of VLIW tree instructions, see
+Section~\ref{sect-tree-ins-mach-model}.)  There are 9 fields
+in the {\bf VLIW} {\tt struct}:
+
+\begin{itemize}
+
+  \item {\bf time} indicates how many VLIW instructions distant
+	from the start of the group, the current VLIW
+	instruction is.  The first VLIW instruction of a group
+	has {\bf time} 0.
+
+  \item {\bf group} is a unique identifier indicating the VLIW
+	group to which this group to which this instruction
+	belongs.  As noted in Section~\ref{sect-sched-alg}, VLIW
+	groups are trees of tree instructions.
+
+  \item {\bf group\_entry} is the {\it PowerPC} address of the entry point
+	of the {\bf group} to which this VLIW instruction belongs.
+
+  \item {\bf entry} points to the first edge (or {\bf TIP}) in
+	the current VLIW instruction.  For example for the VLIW
+	instruction in Figure~\ref{fig-vliw-tree} on
+	page~\pageref{fig-vliw-tree}, the {\bf entry} edge is
+	the segment from {\tt V1} to {\tt bc CR0.eq}.
+
+  \item {\bf xlate} is the address of the simulation code for
+	this VLIW instruction.  (This value is not filled in
+	until scheduling for a page is complete.)
+
+  \item {\bf visited} is a bit used by the simulation code
+	generator and by the VLIW code dumper to know whether
+	they have processed this VLIW instruction previously.
+
+  \item {\bf resrc\_cnt} is used to determine the number of each type
+	of function unit which have been used by this VLIW
+	instruction.  As noted in
+	Section~\ref{sect-tree-ins-mach-model}, this version of {\bf
+	DAISY} does not distinguish between floating point and integer
+	operations.  This is reflected in {\bf resrc\_cnt}, which sees
+	only 1 type of ALU.  To change this, the {\bf ALU} {\tt
+	\#define} earlier in {\tt vliw.h} must be split into {\tt
+	\#define} {\bf ALU\_INT} and {\tt \#define} {\bf ALU\_FLT}.
+
+  \item {\bf cluster} is similar to {\bf resrc\_cnt} but is used
+	when {\bf DAISY} is targetting an architecture with clustered
+	function units.
+
+  \item {\bf mem\_update\_cnt} is used with the combining
+	optimization.
+
+\end{itemize}
+
+The {\bf TIP} {\tt struct} is used extensively by the {\bf DAISY}
+scheduler described in Section~\ref{sect-sched-alg}.  Its name
+derives from the fact that the last edge or {\it tip} on the
+current scheduling path is where the current {\it PowerPC} operation
+or the {\it commit} of the current {\it PowerPC} operation's value to
+a {\it PowerPC} register is placed.  Some of the more important fields
+in the {\bf TIP} {\tt struct} are:
+
+\begin{itemize}
+
+  \item {\bf vliw} is a back pointer to the overall VLIW.  This
+	is essential in determining whether a function unit is
+	available to add an operation to the current tip.
+
+  \item {\bf op} is a linked list of the operations on the
+	current tip.  For example, in Figure~\ref{fig-vliw-tree}
+	on page~\pageref{fig-vliw-tree}, the initial {\bf TIP}
+	beginning at {\tt V1} would have an {\bf op} field of
+	{\tt cmp, add}.
+
+  \item {\bf num\_ops} is the number of operations in the {\bf op}
+	list.
+
+  \item {\bf left} and {\bf right} are the false and true paths
+	from a conditional jump in a VLIW tree instruction (as
+	described in Section~\ref{sect-tree-ins-mach-model}).
+	In Figure~\ref{fig-vliw-tree}, {\bf left} would be the
+	edge from {\tt bc CR0.eq} to {\tt b V2}, while {\bf
+	right} would be the edge from {\tt bc CR0.eq} to {\tt bc
+	CR1.lt}.  The terminating branch of an edge, such as
+	{\tt bc CR0.eq} is associated with the edge above it.
+	Note that unconditional onpage branches entirely
+	disappear, with the succeeding ALU operations scheduled
+	as though they were in a straight line with the
+	predecessor of the unconditional branch.  Leaf branches
+	of a VLIW tree instruction have {\bf left} set to {\bf
+	0}.  Offpage leaf branches place the address of the
+	offpage target in {\bf right}.
+
+  \item {\bf gpr\_vliw}, {\bf fpr\_vliw}, and {\bf ccr\_vliw}
+	are used in allocating non-{\it PowerPC} registers for rename
+	results.  They are bit vectors, with one bit per
+	register to indicate whether the register is free in the
+	current tip.  Note that for a register to be free for a
+	result, it must not only be free in the current tip, but
+	in all tips preceding the current tip until the tip at
+	which the result is calculated.  For example, consider
+	Figure~\ref{fig-ppc-to-vliw} on
+	page~\pageref{fig-ppc-to-vliw}, when scheduling the
+	{\it PowerPC} {\tt xor} operation.  The current tip begins at
+	{\tt VLIW2}.  The rename register {\tt r63} had to be
+	free not only in this tip, but in its predecessor, the
+	tip from {\tt bc L1} to {\tt b VLIW2}.
+
+  \item {\bf gpr\_rename}, {\bf fpr\_rename}, and {\bf ccr\_rename}
+	are used to determine the register in which a value
+	resides at a particular time.  If, as with the {\tt xor}
+	result in Figure~\ref{fig-ppc-to-vliw}, an operation is
+	renamed, subsequent operations have to know when and
+	where to get the rename value and when to get the value
+	from the {\it PowerPC} register.  For example the {\tt and}
+	which uses the result of the {\tt xor} in
+	Figure~\ref{fig-ppc-to-vliw} must know to obtain its
+	input from {\tt r63} instead of {\tt r4} in {\tt VLIW2}.
+
+  \item {\bf ca\_rename} and {\bf ov\_rename} are similar to
+	{\bf gpr\_rename} above except they indicate whether the
+	{\tt CA} and {\tt OV} bits from the {\it PowerPC} {\tt XER}
+	register have been renamed in a GPR extender.  The need
+	for this is covered in more detail in
+	Section~\ref{sect-ppc-idio}.
+
+  \item {\bf stores} and {\bf last\_store} are used for tracking
+	stores on the current path.  This is essential for the
+	{\it must-alias} optimization described in
+	Section~\ref{sect-must-alias}, as well as in knowing
+	when a {\tt load-verify} operation is needed on a
+	uniprocessor.  (See Section~\ref{sect-load-verif}.)
+
+  \item {\bf avail} indicates the time at which each machine
+	resource (not just registers) is available.  This is
+	used heavily in the scheduling algorithm described in
+	Section~\ref{sect-sched-alg}, and roughly speaking the
+	value returned by the {bf get\_earliest\_time()}
+	function in {\tt vliw.c} is the maximum {\bf avail} time
+	of each of an operation's inputs.
+
+  \item {\bf cluster} is a supplement to {\bf avail}.  In a
+	machine with function unit clusters, a result is ready
+	at its {\bf avail} time only in its own cluster.
+
+  \item {\bf loophdr} is a bit vector to track which
+	instructions have been seen on the current path from the
+	entry point of this VLIW group.  If an instruction has
+	been seen previously, it means there is a loop.
+
+  \item {\bf gpr\_writer} and {\bf mem\_update\_cnt} are used by the
+	combining optimization.
+
+  \item {\bf prob} is the probability that this tip executes
+	given that the entry point of this group executed.
+	These probabilities are established through a simplified
+	Ball-Larus set of heuristics.  These
+	probabilities inevitably become small after a few
+	conditional branches are encountered on the current
+	path, thus making it difficult to know which operations
+	to schedule --- a problem alluded to in
+	Section~\ref{sect-intro}.
+
+  \item {\bf orig\_ops} counts the number of {\it PowerPC} operations
+	which (1) have their result placed in a {\it PowerPC} register
+	on this {\bf TIP}, or (2) are a store, or (3) are a
+	branch.  This information is used to calculate the
+	infinite cache ILP attained, as described in
+	Section~\ref{sect-user-view}.
+
+  \item {\bf br\_condbit} specifies which of the (up to 256)
+	condition code bits is being tested by the conditional
+	branch terminating the {\bf TIP}.  The sense of the
+	condition (branch if {\tt TRUE} or branch if {\tt
+	FALSE}) is obtained from {\bf br\_ins}, the original
+	{\it PowerPC} conditional branch.
+
+\end{itemize}
+
+Another set of important data structures are the opcode formats
+in {\tt dis.h}.  The {\bf OPCODE\_BASE} {\tt struct} defines
+basic information used in parsing {\it PowerPC} operations such as the
+primary and extended opcodes.  Each {\it PowerPC} operation also has a
+unique number indicated by the {\bf op\_num} field.  The {\bf
+op\_num} values are defined in the file {\tt dis\_tbl.h}.  The
+{\bf page} field of {\bf OPCODE\_BASE} refers to the page number
+in an old 1990 manual describing the Power (not {\it PowerPC})
+architecture.  These numbers are probably of little use at this
+point.  However, one of the carryovers of this is that the
+mnemonics used in {\tt dis\_tbl.h} and {\tt dis\_tbl.c} are
+generally Power, not {\it PowerPC} mnemonics.  This should probably be
+changed at some point.
+
+The file {\tt dis\_tbl.c} contains a list of all the Power and
+{\it PowerPC} opcodes formated to initialize the {\bf OPCODE1} {\tt
+struct} in {\tt dis.h}.  {\bf OPCODE1} has two fields, the {\bf
+OPCODE\_BASE} just described and {\bf OPERAND\_IN}.  The {\bf
+OPERAND\_IN} {\tt struct} lists the source and destination
+operands of each Power and {\it PowerPC} operation.  Operands can be
+either explicit in the opcode format, in which case {\tt
+dis\_tbl.c} used a field name such as {\tt RT} for them, or
+implicit, in which case {\tt dis\_tbl.c} explicitly identifies
+them.  For example {\tt CA} is an implicit destination of {\tt
+addic} (or {\tt ai} for Power).  The field names such as {\tt
+RT} are defined in the file {\tt opcode\_fmt.h}.  Fields are
+divided into those such as {\tt RT} which are renameable
+(generally corresponding to GPR's, FPR's, and condition code
+fields/bits), and those which are not renameable.
+
+Returning to the file {\tt dis.h}, the {\bf OPCODE2} {\tt
+struct} is defined as well.  {\bf OPCODE2} is similar to {\bf
+OPCODE1}, with both sharing the same {\bf OPCODE\_BASE}.
+However, where {\bf OPCODE1} symbolically names some inputs and
+outputs, {\bf OPCODE2} explicitly names all inputs and outputs
+of a parsed instruction.  For example, {\bf OPCODE1} deals with
+the general instruction, e.g. {\tt and RA,RS,RB}, while {\bf
+OPCODE2} deals with a specific instance of it, e.g. {\tt and
+r3,r4,r5}.
+
+{\it These {\bf OPCODE2} format instructions define not only the
+input {\it PowerPC} instructions to {\bf DAISY}, but also the VLIW primitive
+operations.} This ties the VLIW architecture very closely (too
+closely) to the {\it PowerPC} architecture.  This should be changed at
+some point so the VLIW architecture can define its own set of
+primitive ALU and memory operations.
+
+\section{Translation Idiosyncrasies}
+\label{sect-idio}
+
+\subsection{{\it PowerPC} Translation Idiosyncrasies}
+\label{sect-ppc-idio}
+
+{\it PowerPC} has many branch instructions which decrement the
+{\tt ctr} and branch depending on whether {\tt ctr} is zero,
+possibly in conjunction with some other condition.  Such
+branches become serializing, since they both read and set {\tt
+ctr}.  In a practical terms, such branches limit parallelism by
+requiring that no more than one loop iteration execute per
+cycle.  To overcome this problem, it is useful to make {\tt ctr}
+one of the non-{\it PowerPC} architected GPR's.  For example
+{\bf DAISY} makes the {\it PowerPC} {\tt ctr} synonymous with {\tt r32}.  In
+this way the value in {\tt ctr} can be explicitly decremented
+with the result renamed (e.g. to {\tt r63}, then committed to
+{\tt ctr/r32}.  The renamed value can also be explicitly
+compared to 0, and {\tt and}'ed with some other condition if
+need be.  In programs with small tight loops, we have observed
+significant improvement from these actions.
+
+In addition to branching on the {\tt ctr} value, {\it PowerPC}
+branches can of course branch on values of condition register
+bits.  It can further branch on the conjunction of a condition
+register bit values and whether the {\tt ctr} is 0.  For good,
+high frequency performance, such compound branches must be
+broken into simple primitives, which ultimately branch based
+solely on the value of a single bit.
+
+For similar reasons, {\bf DAISY} places the {\it PowerPC} link
+register in {\tt r33}.  The {\tt MQ} register from the Power
+architecture is in {\tt r34}.  This should probably be changed at some
+point since the {\it PowerPC} architecture does not define the MQ
+register.
+
+Although it does not do so in this version, it would be worthwhile for
+{\bf DAISY} to maintain a non-{\it PowerPC} architected register such
+as {\tt r35} with the value 0.  (This convention could be enforced by
+software, i.e. the {\bf DAISY} translator, not by hardware.  Since the
+user has no access to the non-{\it PowerPC} registers, this can work.)
+Because the {\it PowerPC} load and store instructions, as well as {\tt
+addi} follow the convention that if the {\tt RA} field is 0, it means
+literal 0, not the contents of {\tt r0}, having a VLIW register
+dedicated to 0 makes scheduling much easier.  To see this more
+clearly, consider a load instruction with {\tt RA} field {\it not}
+equal to 0.  Assume this load is scheduled early with its result
+placed in a rename register.  Because of copy propagation, at the time
+of this early load the value of the {\tt RA} register may not be in
+the same register as indicated in the {\it PowerPC} operation, and may
+in fact be in {\tt r0}.  For example, the original {\it PowerPC}
+operation may be {\tt lwz r3,8(r4)}.  However, at the time the {\tt
+lwz} is scheduled, the value of {\tt r4} may reside in {\tt r0}.
+However the instruction {\tt lwz r3,8(r0)} does not mean load from the
+address {\tt <r0+8>}, it means literal address {\tt 8}.  To avoid this
+problem, the {\bf DAISY} VLIW architecture ought not define {\tt r0} to
+mean literal {\tt 0}.  To handle those loads and {\tt addi}'s where
+literal {\tt 0} is needed, {\tt r35} could be used.
+
+Yet another problem arises from the {\it PowerPC} contains {\tt
+mtcrf} instruction.  The {\tt mtcrf} instruction moves any
+combination of 8, 4-bit condition register fields from a GPR to
+the condition code register.  Since the VLIW architecture has
+more than 8 condition register fields, extending the {\tt mtcrf}
+instruction must be handled.  If the VLIW registers are 64 bits
+and the VLIW has 16, 4-bit condition register fields, then a
+simple extension of {\tt mtcrf} could be done, although the
+instruction encoding would likely use more than 32 bits.  Since,
+only one field is moved in many cases the {\bf DAISY} software assumes
+the architecture will have an additional modified format, {\tt
+mtcrf2}.  The {\tt mtcrf2} instruction has 3 operands:
+%%
+\begin{enumerate}
+
+  \item One 4-bit condition register as the destination for the
+	instruction.
+
+  \item A GPR instruction containing the 4-bit source field for
+	the move.
+
+  \item An immediate value specifying which 4-bit field in the
+	GPR is to be moved to the condition register.
+\end{enumerate}
+
+The {\it PowerPC} condition register must be otherwise dealt
+with carefully, as it is addressable in 3 ways, (1) as individual
+bits for operations like {\tt crnand} and conditional branches,
+(2) as 4-bit condition register fields, as set by {\tt cmp}
+type instructions and moved by {\tt mtcrf2} type instructions,
+and (3) as a full 32-bit entity, as used with the {\tt mfcr}
+instruction for example.  Dependences set at one level, must
+of course be observed at other levels.  For example a branch
+cannot be moved above its compare.
+
+Finally, the {\tt CA, OV}, and {\tt SO} bits of the {\tt XER}
+register require special attention in order to attain maximum
+parallelism.  The {\tt addic} instruction in particular is
+heavily used to increment loop index variables.  Alas, {\tt
+addic} not only bumps the value in its destination GPR, it also
+sets the carry value in {\tt CA}.  Unless this {\tt CA} value
+can be renamed, {\tt addic} instructions must serialize because
+of the output dependence between them --- even if the {\tt CA}
+value computed is never used --- which is the case for the vast
+majority of code.~\footnote{The {\bf DAISY} compiler does not have
+sufficient time to do a liveness analysis to determine with
+certainty that the value in {\tt CA} is dead.} It would be
+better if compilers always used the {\tt addi} instruction instead of
+{\tt addi} in such cases.  However, a large body of code
+exists using {\tt addic}.  To get around this problem, {\bf DAISY}
+places the value of {\tt CA} in an extender bit of the target
+GPR for an operation such as {\tt addic} --- if the {\tt addic}
+was executed speculatively and its integer result renamed to a
+non-{\it PowerPC} architected register.  When the integer result
+is committed to its {\it PowerPC} architected register, the {\tt
+CA} extender bit is simultaneously committed to the {\tt CA} bit
+in the {\it PowerPC} {\tt XER} register.  If an {\tt addic}
+instruction is not executed speculatively, the VLIW can place
+the carry value directly in the {\tt CA} bit of the {\tt XER}.
+(The architecture can tell speculative operations by their
+non-{\it PowerPC} architected destination register.)  The
+overflow ({\tt OV}) and summary overflow ({\tt SO}) bits are
+handled similarly, except that the {\tt OV} extender bit for a
+speculative operation is both placed in the {\tt XER} {\tt OV}
+bit as well as {\tt or}'ed with the {\tt SO} bit already in the
+{\tt XER} register.  
+
+A similar scheme is needed for the bits of the {\tt FPSCR} register,
+and the various combinations in these bits are modified by different
+floating point instructions.  Several forms of the floating point move
+register instruction ({\tt FMR}) are then needed to handle updating
+the appropriate combinations of bits in the {\tt FPSCR} from the {\tt
+FPSCR} extender bits which must be added to each floating point
+register, just as {\tt CA} and {\tt OV} are added to each general
+purpose register.
+
+Even the condition register bits need such extenders if the
+instructions {\tt fcmpo} and {\tt fcmpu} are allowed to be renamed and
+executed out of order.  {\bf DAISY} currently does {\tt fcmpo} and
+{\tt fcmpu} in order.
+
+To make {\bf DAISY} emulate the full {\it PowerPC} architecture
+including supervisor code, it is important that the machine model be
+complete, or at least easily extendable.  For example, dependencies on
+mode bits in the MSR should be modelled as well as dependences on
+segment registers and BAT's.  WIMG bits must also be modelled for
+correct address translation.  There are machine specific registers
+such as HID0 on the 604, which also must be modelled.  In general, it
+is probably easiest to pick a specific {\it PowerPC} implementation,
+and strictly model it.
+
+\subsection{Other Idiosyncrasies}
+\label{sect-other-idio}
+
+There are many data structures in {\bf DAISY} which are live only
+during the formation of a single group.  It would be useful to have a
+special {\tt malloc} for such structures, with all such memory being
+automatically free'd after the translation of each group is complete.
+{\bf DAISY} has an incomplete and awkward implementation of this
+special {\tt malloc}.
+
+Simulation code must be managed in a parallel fashion to the actual
+VLIW binary code.  That is when VLIW code for a group is formed, the
+simulation code must also be formed (until we have real hardware).
+Likewise when a VLIW group is destroyed the simulation code must also
+be destroyed.  Code should be written with this in mind so that VLIW
+code and simulation code are handled by paired function calls or some
+like-minded construct.
+
+There are several shortcomings to the current {\bf DAISY}
+implementation which could and should cleaned up.  First, {\bf DAISY}
+has no simple, clean way to get a scratch register for use by the
+compiler in generating intermediate values or values needed only by
+{\bf DAISY} and not the original {\it PowerPC} code, e.g. the
+destination of an {\tt LRA} instruction.  Next, {\bf DAISY} has no
+simple clean way to delete operations.  This is particularly painful,
+when a {\it PowerPC} instruction maps to several VLIW primitives, and
+it is not known ahead of time if those primitives will be able to be
+scheduled early.  (This happens, for example, on {\it PowerPC} {\tt
+loads} going to VLIW {\tt load} -- {\tt load-verify} operations.)  If
+all the operations cannot be scheduled early, then they must often all
+be deleted.  The current {\bf DAISY} does not make this easy.
+Finally, the current {\bf DAISY} assumes that the VLIW primitive
+operations will look very much like {\it PowerPC} operations, (but
+with more registers).  This problem results from the front and back
+ends sharing a common opcode table.  Clearly this problem should be
+avoided in new implementations.
+
+\section{Dumping VLIW Instructions}
+\label{sect-vliw-dump}
+
+An assembly language dump of the generated VLIW code is
+generated in the file {\tt daisy.vliw} if the user specifies the
+{\tt -N} flag when running {\bf DAISY} ({\tt daisy}).  The code to
+perform this dump is largely in the file {\tt vliw\_dump.c}.
+This code traverses each VLIW group --- i.e. a tree of VLIW tree
+instructions --- and emits the VLIW instructions.  The most
+natural way to traverse a VLIW group is by starting with the
+{\bf entry} {\bf TIP} of the first VLIW instruction and
+following its {\bf left} and {\tt right} links in depth-first
+fashion to each exit of the group.  Unfortunately this
+depth-first traversal does not group together the operations in
+a single VLIW tree instruction.  Thus the dumper first traverses
+the group to find the individual VLIW tree instructions, and
+then for each such instruction emits the code.
+
+\begin{figure}
+\begin{verbatim}
+V1:
+T1_27738b58:                        # 0xd01b7244, Cnts Offset: 0
+    cax       r1,r2,r3
+    bc        12,2,T1_27738e4c      #             SKIP
+T1_27738c54:                        #             Cnts Offset: 0
+    xor       r63,r5,r6
+    b         T1_27738d50
+T1_27738e4c:                        # 0xd01b7260, Cnts Offset: 4
+    sf        r9,r10,r11
+    b         OFFPAGE
+
+V2:
+T1_27738d50:                        # 0xd01b7254, Cnts Offset: 8
+    rlinm     r12,r1,3,0,28
+    or        r4,r63,r63
+    and       r8,r63,r7
+    bc        4,5,T1_27739044       #             SKIP
+T1_27738f48:                        # 0xd01b7258, Cnts Offset: 8
+    b         OFFPAGE
+T1_27739044:                        # 0xd01b7268, Cnts Offset: c
+    cntlz     r11,r63
+    b         OFFPAGE
+\end{verbatim}
+\caption{Example of VLIW dump output with {\tt -N} flag.}
+\label{fig-vliw-dump}
+\end{figure}
+
+Emitting the code for a VLIW tree instruction subdivides into
+emitting the code for each {\bf TIP} of the instruction.  As
+noted in Section~\ref{sect-data-struc} the ALU and memory ops
+are contained in the {\bf op} field of the tip (in reverse
+order).  The tips are glued together using the {\bf left}, {\bf
+right} and {\bf br\_condbit} fields of {\bf TIP}.
+Figure~\ref{fig-vliw-dump} illustrates the output corresponding
+to the two VLIW instructions in Figure~\ref{fig-ppc-to-vliw} on
+page~\pageref{fig-ppc-to-vliw}.
+
+There are several points to note about the dump in
+Figure~\ref{fig-vliw-dump}:
+
+\begin{itemize}
+
+  \item Power, not {\it PowerPC} mnemonics are used.
+
+  \item VLIW tree instructions begin at labels of the form {\tt
+	Vn:}, where {\tt n} is a count that starts at 1 and
+	increases for the entire execution of {\bf DAISY}.
+
+  \item {\bf TIP} edges are labelled as {\tt Tn\_12345678},
+	where the {\tt n} indicates which invocation of the
+	{\bf DAISY} translator produced this tip.  As can be seen from
+	Figure~\ref{fig-vliw-dump}, this count begins at 1.  To
+	be more precise, this count is the {\bf
+	xlate\_entry\_cnt} variable bumped on each invocation of
+	the {\bf xlate\_entry()} function discussed in
+	Section~\ref{sect-internal-view}.  The {\tt 12345678} is
+	the hex address of the {\bf TIP} {\tt struct} for this
+	tip, as described in Section~\ref{sect-data-struc}.  The
+	{\bf TIP} {\tt struct} memory is reclaimed after each
+	page translation, so an address does not uniquely
+	identify a tip.  However the $<$ {\it invocation count},
+	{\bf TIP} {\it address} $>$ pair do.
+
+  \item Onpage branches and intra-VLIW conditional branches use
+	tip labels to indicate their targets.  For example, the
+	first {\tt bc} operation in VLIW instruction {\tt V1}
+	branches to the last tip in {\tt V1}.  As discussed in
+	Section~\ref{sect-tree-ins-mach-model}, this {\tt bc} is
+	not really a branch, but a mask to indicate which
+	operations in {\tt V1} should execute, {\tt cax, xor} or
+	{\tt cax, sf}.  Such conditional branch/mask
+	instructions are commented with a {\tt SKIP} annotation
+	in the dump as can be seen in
+	Figure~\ref{fig-vliw-dump}.  The {\tt b T1\_27738d50} in
+	the middle {\bf TIP} of {\tt V1} is actually a branch to
+	the next VLIW instruction {\tt V2}.
+
+  \item The hex numbers after the {\tt \#} such as {\tt
+	0xd01b7244} in {\tt V1} indicate the address of the
+	{\it PowerPC} branch terminating the tip.  In other words, the
+	{\tt bc 12,2,T1\_27738e4c} was at address 0xd01b7244 in
+	the original {\it PowerPC} program.  Note that the branch terminating
+	the middle tip of {\tt V1} does not have an address.  This
+	is because this branch does not correspond to any {\it PowerPC}
+	branch, but instead to a branch between VLIW instructions.
+
+  \item Each exit tip of a VLIW instruction has a counter
+	associated with used for tracking the number of times
+	that this tip executes during the execution of the
+	translated program.  The {\tt Cnts Offset} values in
+	Figure~\ref{fig-vliw-dump} refer to the location of the
+	associated exit tip's count value as an offset from the
+	start of the counts area.  These {\tt Cnts Offset}
+	values can sometimes be useful in debugging as described
+	in Section~\ref{sect-debugging}.  {\it Caution:} For
+	large programs like {\tt gcc}, the counts area may not
+	be large enough to hold a count value for all tips.  In
+	such cases the {\tt -I} flag can be specified with {\tt
+	daisy} to suppress generation of such counts.  (This also
+	speeds simulation at the expense of not collecting as much
+	many statistics on the translation.)
+
+\end{itemize}
+
+\section{VLIW Simulation Code}
+\label{sect-simul-code}
+
+Most of the simulation code resides in three files, {\tt
+simul.c}, {\tt ppc\_map.c}, and {\tt ccr-v2p.c}.  The entry
+point for generating simulation code is {\bf
+vliw\_to\_ppc\_group()} in {\tt simul.c}.  In much the same
+manner as a VLIW assembly language listing is dumped, {\bf
+vliw\_to\_ppc\_group()} traverses the VLIW instructions in a
+{\it group} and generates {\it PowerPC} code to emulate the action of
+the VLIW instructions.  (Section~\ref{sect-vliw-dump} describes
+how VLIW instructions are dumped.)
+
+\begin{figure}
+\begin{verbatim}
+V1_SIM:
+    cax     r31,r2,r3                   # cax   r1,r2,r3
+    stw     r31,R1_SHADOW_OFFSET(r13)
+    lwz     r31,CR0_OFFSET(r13)         # bc    12,2,T1_27738e4c
+    mtcrf   0x80,r31
+    bc      4,2,LSIM1                   # Inverted branch sense
+    liu     r31,LSIM2_HIGH              # Construct target addr
+    oril    r31,r31,LSIM2_LOW           # i.e. LSIM2
+    mtlr    r31
+    blrl                                # Branch to orig bc targ
+
+LSIM1:
+    xor     r31,r5,r6                   # xor   r63,r5,r6
+    stw     r31,R63_SHADOW_OFFSET(r13)
+                                        # VLIW regs: par semantics
+    lwz     r1,R1_SHADOW_OFFSET(r13)    # Set r1 at end of V1
+    lwz     r31,R63_SHADOW_OFFSET(r13)  # Set r63 at end of V1
+    stw     r31,R63_OFFSET(r13)
+
+    liu     r31,V2_SIM_HIGH             # Construct V2 simul addr
+    oril    r31,r31,V2_SIM_LOW
+    mtlr    r31
+    blrl                                # Branch to V2 simul code
+
+LSIM2:                                  # Targ of bc 12,2,T1_27738e4c
+    subfc   r31,r10,r11                 # sf    r9,r10,r11
+    stw     r31,R9_SHADOW_OFFSET(r13)
+                                        # VLIW regs: par semantics
+    lwz     r1,R1_SHADOW_OFFSET(r13)    # Set r1 at end of V1
+    lwz     r9,R9_SHADOW_OFFSET(r13)    # Set r9 at end of V1
+
+    liu     r27,0xd01b                  # Offpage target address
+    oril    r27,r27,0x8180              # is 0xd01b8180 ==> r27
+    lil     r26,1                       # Direct Offpage Branch=1
+
+    liu     r31,xlate_entry_raw_HIGH    # Construct xlate_entry_raw
+    oril    r31,r31,xlate_entry_raw_LOW # address
+    mtlr    r31
+    blrl                                # Branch to xlate_entry_raw
+\end{verbatim}
+\caption{Generation of Simulation Code for a VLIW Tree Instruction.}
+\label{fig-simul-code-gen}
+\end{figure}
+
+Figure~\ref{fig-simul-code-gen} has simulation code for VLIW
+instruction {\tt V1} in Figure~\ref{fig-vliw-dump}.  This simulation
+code is generated as follows:
+
+\begin{itemize}
+
+  \item The first ALU/memory operation of {\tt V1} is {\tt cax
+	r1,r2,r3}.  Thus the simulation code must perform this
+	{\tt cax} (or {\tt add}) operation as well.  Most of the
+	VLIW registers are kept at known memory locations.
+	However, for efficiency reasons and for ease of
+	interfacing to other {\it PowerPC} code, some of the VLIW
+	registers are actually kept in {\it PowerPC} registers.  In
+	particular, VLIW registers {\tt r1-r12} are kept in real
+	{\it PowerPC} registers {\tt r1-r12}.  Likewise floating point
+	registers {\tt fp0-??} are kept in real {\it PowerPC}
+	registers.  Thus the inputs for the {\tt cax}
+	instruction come directly from {\it PowerPC} registers {\tt
+	r1} and {\tt r2} as shown in
+	Figure~\ref{fig-simul-code-gen}.
+
+	The destination, {\tt r1}, is of course also kept in a
+	real {\it PowerPC} {\tt r1}.  However, recall from
+	Section~\ref{sect-tree-ins-mach-model}, that VLIW
+	instructions use parallel semantics, and hence any uses
+	of {\tt r1} in VLIW instruction {\tt V1} should get the
+	old value of {\tt r1}, not the new value computed by
+	{\tt cax}.  Thus the {\tt cax} result is placed in {\tt
+	r31}, and then placed in a shadow version of {\tt r1}.
+	At the end of the VLIW instruction, this shadow version
+	of {\tt r1} will be copied to the real {\tt r1}, as
+	explained below.
+
+	Since only VLIW integer registers {\tt r1-r12} are kept
+	in the corresponding {\it PowerPC} register, the other {\it PowerPC}
+	integer registers are available for scratch computation.
+	In particular note:
+
+  \begin{itemize}
+
+    \item {\tt r31} is used to hold the result of the {\tt cax}.
+
+    \item {\tt r13} is used to access the location of the shadow
+	  register for {\tt r1}.  {\tt r13} is used throughout
+	  the simulation code to access needed values -- not
+	  just registers and their shadows, but simulation
+	  counts, hash tables, and other values.  This is
+	  analogous to the use of {\tt r2} in AIX code as the
+	  {\tt TOC} pointer.
+
+  \end{itemize}
+
+  \item The next operation in {\tt V1} after the {\tt cax} is a
+	{\tt bc}.  Note that the {\tt bc} in
+	Figure~\ref{fig-vliw-dump} reads condition register bit
+	{\tt 2}.  Thus the simulation code must first read bit
+	{\tt 2} as well.  The simulator keeps all 64-256 bits of
+	the condition register in memory --- none are kept in
+	real {\it PowerPC} registers, as with some of the integer and
+	floating point registers.  The condition register bits
+	are kept as 4-bit fields, with one 4-bit field stored in
+	the high order 4 bits of a full 32-bit word.
+
+	Thus the simulation code in
+	Figure~\ref{fig-simul-code-gen} first loads the 4-bit
+	field ({\tt CR0}) from memory into {\it PowerPC} register {\tt
+	r31}.  In order to branch on bit {\tt 2}, the value of
+	{\tt CR0} must be placed in the real {\it PowerPC} condition
+	register, thus the {\tt mtcrf} instruction which places
+	the VLIW {\tt CR0} value in the {\it PowerPC} {\tt CR0} field.
+
+	It then remains to actually branch.  The simulation code
+	corresponding to the target of the branch can be
+	arbitrarily far away.  Why can the target be arbitrarily
+	far away?  Note that there may not be room in the
+	currently allocated chunk of memory to place all of the
+	simulation code for the current VLIW instruction.  In
+	such cases, the simulator places an unconditional branch
+	to an arbitrary 32-bit location where the simulation
+	code continues.  The code for to do this branching is in
+	the {\bf dump()} function in {\tt xlate\_mem.c}.
+
+	Since the target can be arbitrarily far, the sense of
+	the conditional branch is inverted, so that the original
+	branch target occurs on the fall-through.  In the VLIW
+	code of Figure~\ref{fig-vliw-dump}, the operation is
+	{\tt bc 12,2} --- branch if bit {\tt 2} is on, whereas
+	in the simulation code of
+	Figure~\ref{fig-simul-code-gen}, the operation is {\tt
+	bc 4,2} --- branch if bit {\tt 2} is off.  Immediately
+	following the simulation fall-through are 4
+	instructions, culminating with {\tt blr}, to construct
+	and branch to the 32-bit address of the simulation code
+	for the target, {\tt LSIM2} of the original branch.
+
+  \item {\tt LSIM1} in Figure~\ref{fig-simul-code-gen} has the
+	code for the fall-through of the VLIW branch and the
+	target of the simulation code branch.  At the
+	fall-through of the VLIW code is the operation {\tt xor
+	r63,r5,r6}.  Just as with the {\tt cax} operation
+	earlier, the {\tt xor} result is computed into {\it PowerPC}
+	{\tt r31} and then saved in a shadow location for {\tt
+	r63}.
+
+  \item The {\tt xor} operation terminates the ALU/memory
+	operations on this path through VLIW instruction {\tt
+	V1}.  Thus the values in the shadow registers can be
+	copied into the real registers.  The next three
+	operations in Figure~\ref{fig-simul-code-gen} do this.
+	Since, as noted above, VLIW {\tt r1} is kept in {\it PowerPC}
+	{\tt r1}, setting the real register for {\tt r1}
+	consists of a single {\tt lwz} operation from the shadow
+	location to {\tt r1}.  VLIW {\tt r63} is not kept in a
+	{\it PowerPC} register, so its shadow is first loaded into
+	{\it PowerPC} {\tt r31}, and then stored into the memory
+	location for VLIW {\tt r63}.
+
+  \item Once this is done the simulation code must branch to the
+	next VLIW instruction on this path, {\tt V2}.  The full
+	32-bit address of the simulation code for {\tt V2} is
+	constructed into {\it PowerPC} {\tt r31}, the moved to the
+	{\it PowerPC} {\tt LinkReg}.  The simulation code for {\tt v2}
+	is then jumped to.
+
+  \item It remains to look at the simulation code for the target
+	of the conditional branch in {\tt V1} and the
+	fall-through of the simulation code that xbranch.  This
+	code is at {\tt LSIM2} in
+	Figure~\ref{fig-simul-code-gen}.
+
+  \item The operation starting this edge in the VLIW code in
+	Figure~\ref{fig-vliw-dump} is {\tt sf r9,r10,r11}.  This
+	{\tt sf} (or {\tt subfc}) is handled just as were the
+	{\tt cax} and {\tt xor} operations earlier, with the
+	result being stored in the shadow location for {\tt r9}.
+
+  \item With the {\tt subfc} is complete, the ALU/memory
+	operations for this path through VLIW {\tt V1} are
+	finished.  Just as on the other path, shadow values are
+	copied to their real registers.  Since {\tt r1} and {\tt
+	r9} were set on this path, these registers are updated.
+
+  \item The culmination of this path differs from the other path
+	however, in that the target is not another VLIW instruction,
+	but an {\tt OFFPAGE} location.
+
+  \item Branching offpage works as follows in
+	Figure~\ref{fig-simul-code-gen}.  {\it PowerPC} register {\tt
+	r27} is loaded with the {\it PowerPC} {\tt OFFPAGE} address,
+	{\tt 0xD01B8180} in this case.  {\it PowerPC} register {\tt
+	r27} is loaded with the branch type ({\tt 1} for {\tt
+	OFFPAGE}) of this branch.  Then the address of the function
+	{\tt xlate\_entry\_raw} is constructed into {\it PowerPC}
+	register {\tt r31}, which is then copied to the {\it PowerPC}
+	{\tt LinkReg}.  The final {\tt blr} goes to {\tt
+	xlate\_entry\_raw}, whose function was described in
+	Section~\ref{sect-internal-view}.
+	
+
+\end{itemize}
+
+The generation of the simulation code just described is largely
+carried out by functions in the files {\tt simul.c}, {\tt
+ppc\_map.c}, and {\tt ccr-v2p.c}, as noted above.  The routines
+in {\tt simul.c} generally handle the control flow through the
+VLIW instruction, while the routines in {\tt ppc\_map.c} deal
+with the ALU and memory operations.  Operations on the condition
+register --- {\tt cmp, fcmpo, crnand, mcrf}, etc. are dealt with
+in {\tt ccr-v2p.c}.
+
+The simulation code in Figure~\ref{fig-simul-code-gen} is
+slightly simplified from the simulation code often generated.
+For example, there is no code to increment the number of times
+each VLIW exit tip is executed.  The code to do such a bump
+follows the style of code in Figure~\ref{fig-simul-code-gen},
+loading the address of the count based on an offset from {\tt
+r13}, incrementing the count, and storing it back.
+
+There is also no simulation code to call a cache simulator,
+trace dumper or other functions written in C.  The simulation
+code for such functions is very similar to the code for dealing
+with offpage branches.  Parameters such as a load address are
+placed in predefined registers.  Then the address of the {\it
+raw} cache handler routine is constructed and placed in the
+{\it PowerPC} {\tt LinkReg}.  A {\tt blrl} is then used to branch to
+the raw cache handler.  Using a {\tt branch-to-LinkReg-and-link}
+instruction permits the raw cache handler to return to the
+simulator as with ordinary function calls.  The raw cache
+handler copies the parameters from predefined registers to AIX
+standard registers, such as {\tt r3, r4, ...}, and then branches
+to a cache simulator written in C.
+
+Note that the simulator uses the {\it PowerPC} {\tt LinkReg} to
+perform indirect branches.  Since this is the case, the {\tt LinkReg}
+for the translated program (e.g. {\tt /bin/ls}) must be kept
+elsewhere.  As noted in Section~\ref{sect-ppc-idio}, the {\tt LinkReg}
+for the translated program is defined to be {\tt r33}, while its {\tt
+CtrReg} is defined to be {\tt r32}, with the Power MQ register
+occupying (for now) {\tt r34}.
+
+The offset locations from {\tt r13} are accessed both by
+assembly language and C routines.  In C, they are accessed via
+the {\bf r13\_area} pointer.  In order to keep the offsets
+consistent between the C and assembly language routines, the
+offsets are generated automatically into files {\tt
+resrc\_offset.h} and {\tt r13\_hdr.s}.  The utility that does
+this is {\tt gen\_resrc} and it is created from the {\tt
+gen\_resrc.c} source file.  {\bf Do not manually alter the
+offsets in {\tt resrc\_offset.h}!}
+
+\section{Debugging {\bf DAISY}}
+\label{sect-debugging}
+
+Debugging {\bf DAISY} is often tedious and difficult --- at least
+debugging problems that occur in the translated code, as opposed
+to the {\bf DAISY} translator itself.  For problems like {\tt assert}
+failures in {\bf DAISY} itself, your favorite symbolic debugger can be
+employed.  For the translated code however, debugging is
+generally done at the assembly language level.  This owes to the
+fact that {\bf DAISY} takes as input a binary executable (at least in
+application mode) and translates it along with any shared
+library functions invoked (1) into VLIW code and (2) into
+{\it PowerPC} simulation code for that VLIW code.  Comparison of input
+and output do not lend themselves to easy identification of
+bugs.
+
+The most useful debugging strategy uses a binary search approach.  On
+every crosspage and indirect branch, {\bf DAISY} can optionally stop
+execution and (1) continue {\bf DAISY}-style execution, (2) report the
+address of the next {\it PowerPC} instruction which would have been
+executed, or (3) execute native {\it PowerPC} code directly without
+being translated into {\bf DAISY} VLIW code.
+
+Binary search can be used to isolate which crosspage or indirect
+branch results in the manifestation of a bug.  For example,
+suppose {\tt /bin/ls} does not translate correctly, as may be
+evidenced by files not being displayed in the same way they are
+if {\tt /bin/ls} is invoked directly.  Then {\bf DAISY} can be run
+with a specification to shift from execution of the translated
+VLIW version to the {\it PowerPC} version after {\bf N} crosspage or
+indirect branches.  With {\tt /bin/ls}, an initial value of
+$\mbox{\bf N}=1000$ might be reasonable.  If a correct listing
+of files results, then the bug must not occur in the first 1000
+crosspage or indirect branches.  Hence {\bf N} must be
+increased, to say 2000.  If the output is now incorrect, then
+the bug must be between crosspage or indirect branch 1000 and
+2000.  Following the binary search technique, {\bf N} is now set
+to 1500.  This process continues until the precise crosspage or
+indirect branch leading to an error is found.  At this point the
+translated code for the problem page can be examined in greater
+detail with knowledge that the bug must lie here.  Note that
+this is true even if there are multiple bugs.  The binary search
+technique catches them in sequence, i.e. the first page with a
+bug is found (and fixed), then the second, etc.
+
+From a user perspective, binary search is controlled by the {\tt
+-L} and {\tt -M} flags to {\tt daisy}.  The number specified
+immediately after {\tt -L} (e.g. {\tt -L1500}) specifies the
+number of crosspage or indirect branches before execution
+switches to native {\it PowerPC} code.  The number after the {\tt -M}
+flag specifies what action to take after {\tt -L} crosspage or
+indirect branches have been seen.  {\tt -M2} indicates that
+control should switch to native {\it PowerPC} code as described, while
+{\tt -M1} indicates that {\bf DAISY} should stop and print out the
+{\it PowerPC} target address of the current crosspage or indirect
+branch.  {\tt -M1} is normally used after {\tt -M2} has isolated
+the offending page to find its {\it PowerPC} address.
+
+The {\tt -L} and {\tt -M} flags set the variables {\tt
+max\_dyn\_page\_cnt} and {\tt max\_dyn\_pages\_action} which are
+referenced in {\bf xlate\_offpage\_indir()} in {\tt simul.c},
+which essentially checks if execution should stop or if {\it PowerPC}
+code should be executed directly from this point forward.
+
+As an aside, properly switching from execution of translated
+VLIW code to native {\it PowerPC} code is a bit tricky, because
+{\it PowerPC} registers must be set in a specific order.  The most
+difficult is {\tt LinkReg} since {\tt LinkReg} is used to branch
+to the native {\it PowerPC} code.  If {\tt LinkReg} is live at this
+point, there is a problem.  A trick to overcome this problem can
+be found in the file {\tt to\_native.c}.
+
+As another aside, the problem page normally lies in the first
+million crosspage or indirect branches.  The worst case thus far
+encountered involved a bug translating {\tt gcc} in which the
+bug did not manifest itself until more than 26 million crosspage
+or indirect branches, with execution of these 26 million taking
+almost an hour each.
+
+Alas even when the problem page is identified, there are still
+difficulties.  The bug may lie either in the translation from
+{\it PowerPC} to VLIW code or in the translation from VLIW code to
+simulation code.  Bugs in the {\it PowerPC} to VLIW code mapping are
+generally easier to find.  In addition the amount of VLIW code
+for the problem page may be large due to code explosion, making
+it difficult to spot the bug by inspection.
+
+One approach in this case is to run a native version of the
+problem program under a debugger in one window, and the {\bf DAISY}
+version in another window.  Since {\bf DAISY} does not reorder
+conditional branches, a correspondence between the native
+version and {\bf DAISY} version may be kept.  Often after a few
+branches, the {\bf DAISY} version will branch one way and the native
+version the other, thus further isolating the bug.
+
+Even without comparing branch by branch, the native version can
+be useful in isolating which VLIW instructions to examine for
+the bug.  Often the amount of time the native version spends on
+the problem page (at the problem point) is short.  In such
+cases, a trace of the native execution can be created.  For
+example, under {\tt dbx}, the {\tt tracei} command can be used
+to do this.  This trace can then be matched to a {\tt daisy.vliw}
+file (as described in Section~\ref{sect-vliw-dump}) to identify
+which VLIW instructions should execute.  By identifying a small
+subset of VLIW instructions to examine, this technique further
+facilitates finding the bug by inspection.
+
+Sometimes the translated code crashes with an illegal
+instruction or similar problem.  In these cases, the VLIW
+simulation code near the crash site can be examined under a
+debugger, since crashes normally report the state of the
+registers including the {\tt IAR}.  The problem is often to find
+what portion of the original {\it PowerPC} program was running at the
+time of the crash, and also to find which VLIW instruction was
+executing (as opposed to the simulation code address reported by
+the debugger).
+
+The tip execution counts discussed in
+Section~\ref{sect-vliw-dump} can be useful in this regard.  As
+noted in Section~\ref{sect-simul-code} these counts are bumped
+at each exit of a VLIW instruction.  These bumps occur
+explicitly in the simulation code including the reading the old
+value from the proper count offset.  These offsets can be
+matched to the count offsets reported in the {\tt daisy.vliw}
+file (see Figure~\ref{fig-vliw-dump} on
+page~\pageref{fig-vliw-dump}) to find the VLIW instruction that
+was executing when the program crashed.  Once the VLIW
+instruction is found, the {\it PowerPC} address of the original code
+can be found by looking at other annotations in the {\tt
+daisy.vliw} file, as discussed in Section~\ref{sect-vliw-dump},
+and as can be seen in Figure~\ref{fig-vliw-dump}.
+
+Another useful trick in debugging is to look at the contents of
+the {\it PowerPC} link register.  As was seen in
+Section~\ref{sect-simul-code}, the simulation code for {\bf DAISY}
+does many of its branches indirectly through the {\it PowerPC} {\tt
+LinkReg} in order to be able to branch to random 32-bit
+addresses.  These branches to link register are normally
+{\tt blrl}, i.e. they branch to {\tt LinkReg} and then set
+{\tt LinkReg} to the subsequent {\it PowerPC} operation.  When the
+translated code crashes at some bad address like 0, the contents
+of {\tt LinkReg} often indicate how the simulated code got to
+the bad address.
+
+An additional caveat about debugging:  Do not set a breakpoint
+for the translated code until that code has actually been
+generated.  At least under {\tt dbx} this results in illegal
+instruction errors.  This restriction means that a breakpoint
+must generally be set in the {\bf DAISY} translator itself, with
+the breakpoint triggering after the problem code is generated,
+but before it is executed.
+
+Another point of interest about debugging {\bf DAISY} involves
+segmentation violations.  Segmentation violations can correctly occur
+in translated code because {\bf DAISY} schedules loads speculatively.
+Not all speculative loads will actually turn out to be needed, and
+those that do not may access arbitrary addresses, and consequently
+cause segmentation violations.  To overcome this difficulty, {\bf
+DAISY} has its own segmentation violation handler (in {\tt shm.c}).
+This handler ignores segmentation violations from loads, but
+terminates the program on violations from stores.  This approach
+occasionally masks problem segmentation violations in the translated
+code or in {\bf DAISY} itself.  Note that when debugging under {\tt
+dbx}, the {\tt ignore segv} command must be used so that {\tt dbx}
+does not catch and complain of segmentation violations that are
+actually of the acceptable type described above.  (The use of {\tt
+ignore segv} is seems to cause some problems under {\bf AIX 4.1.5},
+but seems fine under {\bf AIX 4.3.2}.)
+
+\section{Post-Processing of {\bf DAISY} Output}
+\label{sect-post-proc}
+
+\begin{figure}
+\begin{center}
+\ \psfig{figure=texfig/dvstats.eps,height=7.8in}
+\end{center}
+\caption{Usage Information for {\tt dvstats}.}
+\label{fig-dvstats-info}
+\end{figure}
+
+As described in Section~\ref{sect-user-view}, {\bf DAISY} produces a
+variety of output files.  Many of these are produced by the
+{\tt dvstats} utility, which takes as input three binary files
+produced by {\tt daisy}:
+%%
+\begin{verbatim}
+   ls.vliw_perf_ins_cnts
+   ls.vliw_perf_ins_info
+   ls.vliw_spec_ins_info
+\end{verbatim}
+%%
+if the input to {\tt daisy} was {\tt /bin/ls}.  As with {\tt
+daisy}, a usage summary for {\tt dvstats} is produced by
+invoking it with no arguments.  An abridged form of this usage
+summary is reproduced in
+Figure~\ref{fig-dvstats-info}.
+
+\begin{figure}
+\noindent\rule{\linewidth}{0.5mm}
+\begin{verbatim}
+1840306 VLIW      Instructions Executed over 1 run 
+ 497645 VLIW User Instructions Executed over 1 run 
+
+3332864 Dynamic PPC Ops in Original Program with shared libs
+
+       PPC Path Length
+ 1.8 = ----------------
+       VLIW Path Length
+
+ 785864 Dynamic PPC Ops in Original Program -- User only
+
+       PPC Path Length
+ 1.6 = ----------------
+       VLIW Path Length
+
+Specified ALU Operations Histogram:  4662313 ops ( 2.5 ops / ins)
+ 0:     657355 ( 35.72%   35.72% cumulative)
+ 1:     244518 ( 13.29%   49.01% cumulative)
+ 2:     133254 (  7.24%   56.25% cumulative)
+ 3:     184201 ( 10.01%   66.26% cumulative)
+ 4:     137968 (  7.50%   73.75% cumulative)
+ 5:     117211 (  6.37%   80.12% cumulative)
+ 6:     174626 (  9.49%   89.61% cumulative)
+ 7:     116383 (  6.32%   95.94% cumulative)
+ 8:      74790 (  4.06%  100.00% cumulative)
+...
+\end{verbatim}
+\caption{Start of {\tt ls.histo} file}
+\label{fig-ls-histo}
+\end{figure}
+
+Figure~\ref{fig-ls-histo} shows the first part of the {\tt
+ls.histo} file produced by {\tt dvstats}.  As reported in
+Section~\ref{sect-user-view}, the {\tt ls.histo} file reports
+the infinite cache ILP attained, along with histograms on how
+many operations were packed into each VLIW instruction.  The
+ILP information is reported for the application as a whole,
+and for that part in the original, non-shared library portion
+of the application.
+
+\begin{figure}
+\begin{verbatim}
+/bin/ls
+--------------------------------------------------
+Invocations of translator                     333
+Number of pages visited                       0
+Number of user pages visited                  0
+Total number of entry points                  1366
+Average number of entry points per page       0
+# of groups which were created                1366
+# of groups which executed   > 10 times       0
+# of groups which executed 5 -  9 times       0
+# of groups which executed 2 -  4 times       0
+# of groups which executed      1 time        0
+# of direct offpage    branches executed      189778
+# of indirect CTR      branches executed      37457
+# of indirect LINKREG  branches executed      70240
+# of indirect LINKREG2 branches executed      0
+# of TOTAL  crosspage  branches executed      297475
+# of hash values with single entry point      1264
+Max # of entry points for any hash value      2
+Hash value with Max # of entry points         484
+Max # of open paths                           170
+Total PPC ins (some xlated mult times)        33759
+Total VLIW instructions                       1
+Total size of VLIW          code              291264
+Size of VLIW code from LOAD_VERIFY fails      2420
+Size of VLIW code from LOAD_VERIFY recomps    0
+Number of              LOAD_VERIFY recomps    0
+# Times LOAD-VERIFY instruc failed            10
+# Sites LOAD-VERIFY instruc failed            2
+Total size of simulation    code              2835264
+Total size of original user code              13896
+Average size of translated page of code       0
+\end{verbatim}
+\caption{Example of {\tt daisy.stats} file produced by {\tt daisy}.}
+\label{fig-daisy-stats}
+\end{figure}
+
+As also described in Section~\ref{sect-user-view}, {\tt daisy} appends
+additional statistics to a file {\tt daisy.stats} in the current
+directory.  A sample of this information is shown in
+Figure~\ref{fig-daisy-stats}.  A note of caution:  programs which
+invoke the {\tt fork()} library can be translated by {\bf DAISY}, but
+the statistics produced in {\tt daisy.stats} and the files produced by
+{\bf dvstats} are not accurate -- only one branch of the fork is seen.
+Luckily few benchmark and standard utility programs that we have run
+invoke {\tt fork()}.
+
+\section{Caveats}
+
+\begin{itemize}
+
+  \item {\bf DAISY} (executable {\tt daisy}) has been developed on a
+	604E machine.  The simulation code generated may cause
+	problems on some other variants of the {\it PowerPC}.
+
+  \item As noted in Section~\ref{sect-vliw-dump}, for large
+	programs like {\tt gcc}, the counts area may not be
+	large enough to hold a count value for all tips.  In
+	such cases the {\tt -I} flag can be specified with {\tt
+	daisy} to suppress generation of such counts.  (This
+	also speeds simulation at the expense of not collecting
+	as much many statistics on the translation.)
+
+  \item Whenever {\bf DAISY} generates code, as with the {\bf dump()}
+	function in {\tt xlate\_mem.c}, the {\bf flush\_cache()}
+	function in {\tt cache.c} should be called to make sure the
+	generated code is flushed from the {\it PowerPC} data cache to
+	the {\it PowerPC} instruction cache.
+
+  \item In order to use {\tt daisy}, the {\tt datasize} limit must be
+	at least 256 Mbytes.  Under {\it csh} or {\it tcsh}, this can
+	be accomplished via the command {\tt limit datasize 512000
+	kbytes} (which actually sets it to 512 Mbytes).
+
+  \item In order to use {\tt daisy}, it is important to have a large
+	amount of paging space:  at least 256 Mbytes, and preferably
+	400 Mbytes.  The amount you currently have may be determined
+	by typing {\tt lsps -a}.  Contact your system administrator if
+	you need to increase your amount.
+
+\end{itemize}
+
+\section{Building the {\bf DAISY} Executables}
+\label{sect-build-daisy}
+
+There are four steps to compile the two {\bf DAISY} executables, {\tt
+daisy} and {\tt dvstats}:
+
+\begin{enumerate}
+
+  \item Go to the {\tt daisy} directory of this distribution.
+
+  \item Type {\tt make}.
+
+  \item Go to the {\tt dvstats} directory of this distribution.
+
+  \item Type {\tt make}.
+
+\end{enumerate}
+
+\section{Quick Start Running {\bf DAISY}}
+\label{sect-quick-start}
+
+9 steps to run {\bf DAISY}:
+
+\begin{enumerate}
+
+  \item Login to a {\it PowerPC}-604 machine, if available.
+
+  \item Make sure the {\tt datasize} limit is set so that {\bf DAISY}
+	can run.  {\bf DAISY} requires at least 256 Mbytes.
+	Under {\it csh} or {\it tcsh}, this can be accomplished via
+	the command {\tt limit datasize 512000 kbytes}, which gives
+	512 Mbytes.
+
+  \item Make sure there is sufficient paging space:  at least 256
+	Mbytes, and preferably 400 Mbytes.  The amount you currently
+	have may be determined by typing {\tt lsps -a}.  Contact your
+	system administrator if you need to increase your amount.
+
+  \item Make sure that you have the directory containing {\tt daisy},
+	the {\bf DAISY} executable on your path.
+
+  \item Set the environment variable {\it DAISY\_CONFIG} to where
+	the file {\tt daisy.config} can be found.  (A sample version
+	is in the {\tt daisy} directory of this distribution.)
+
+  \item Set the environment variable {\it CACHE\_CONFIG} to where the
+	files {\tt cache.config} and {\tt tlb.config} can be found.
+	(Sample versions are in the {\tt daisy} directory of this
+	distribution.)
+
+  \item Type {\tt daisy -V432 /bin/ls}.  Within 10-20 seconds, the normal
+	directory listing and a new AIX command prompt should appear.
+        The -V432 tells {\tt daisy} that it is running under AIX version
+	4.3.2.  You should use the proper version of AIX for the machine
+	on which you are running.  This number can be determined by
+	using the command:
+
+\begin{verbatim}
+         lslpp -i | grep adt | grep bos | grep lib | head -1
+\end{verbatim}
+
+        {\bf DAISY} has been tested under three versions of AIX:  {\bf
+	AIX 3.2.5, AIX 4.1.5}, and {\bf AIX 4.3.2}, although there has
+	not been recent testing under {\bf AIX 3.2.5} and performance
+	there is uncertain..
+
+  \item The file {\tt daisy.stats} should be in the current directory,
+	and have contents similar to those in
+	Figure~\ref{fig-daisy-stats} on page~\pageref{fig-daisy-stats}.
+
+  \item Type {\tt dvstats -c ls .}.  This should complete within a
+	couple of seconds.  Look at the file {\tt ls.histo}, which
+	lists the infinite cache ILP attained by the VLIW machine.
+	The {\tt ls.histo} file should be similar to the one in
+	Figure~\ref{fig-ls-histo} on page~\pageref{fig-ls-histo}.
+	(The {\tt -c} flag suppresses generation of a large {\tt
+	ls.cnts} file.)
+
+\end{enumerate}
+
+\vspace*{-0.20in}
+
+\begin{thebibliography}{10}
+
+\vspace*{-0.10in}
+
+\bibitem{Ebcioglu88}
+Kemal Ebcio\u{g}lu.
+{\it Some Design Ideas for a {VLIW} Architecture for
+Sequential-Natured Software}.  In M.~Cosnard et~al., editor, {\em
+Parallel Processing}, pages 3--21.  North-Holland, 1988.  (Proceedings
+of IFIP WG 10.3 Working Conference on Parallel Processing).
+
+\bibitem{EbciogluAltman96}
+Kemal Ebcio\u{g}lu and Erik R. Altman, 
+{\it {\bf DAISY:} Dynamic Compilation for 100\% Architectural
+Compatibility}.  Research Report RC 20538, IBM T.J. Watson Research
+Center, Yorktown Heights, NY, 1996.
+
+\bibitem{EbciogluAltman97}
+Kemal Ebcio\u{g}lu and Erik R. Altman,
+{\it{\bf DAISY:} Dynamic Compilation for 100\% Architectural
+Compatibility}.  In {\em Proc. of the 24th Annual International
+Symposium on Computer Architecture}, pages 26--37, Denver, CO, June
+1997. ACM.
+
+\bibitem{EbciogluEtAl98}
+Kemal Ebcio\u{g}lu, Jason Fritts, Stephen Kosonocky, Michael Gschwind,
+Erik R. Altman, Krishna K. Kailas, and Terry Bright,
+{\it An eight-issue tree-{VLIW} processor for dynamic binary
+translation}.  In {\em Proc. of the 1998 International Conference on
+Computer Design (ICCD~'98) -- VLSI in Computers and Processors}, pages
+488--495, Austin, TX, October 1998. IEEE Computer Society.
+
+\bibitem{EbciogluEtAl99a} 
+Kemal Ebcio\u{g}lu, Erik R. Altman, Sumedh Sathaye, and Michael Gschwind,
+{\it Execution-Based Scheduling for VLIW
+Architectures}, In {\em Proceedings of Europar'99}, pages 1269--1280,
+Toulouse, France, September 1999
+
+\bibitem{EbciogluEtAl99b} 
+Kemal Ebcio\u{g}lu, Erik R. Altman, Sumedh Sathaye, and Michael Gschwind,
+{\it Optimizations and Oracle Parallelism with Dynamic Translation},
+In {\em Proceedings of Micro-32}, Haifa, Israel, November 16-18, 1999.
+
+\bibitem{GschwindEtAl00} 
+Michael Gschwind, Kemal Ebcio\u{g}lu, Erik R. Altman, and Sumedh Sathaye
+{\it Binary Translation and Architecture Convergence Issues for IBM System/390}
+In {\em Proceedings of ICS-2000}, Santa Fe, New Mexico, May 8-10, 2000.
+
+\bibitem{AltmanEbcioglu00}
+Erik R. Altman and Kemal Ebcioglu,
+{\it Simulation and Debugging of Full System Binary Translation},
+Proceedings of PDCS-2000, Track 4 - Modeling and Analysis, August
+8-10, 2000, Las Vegas, NV
+
+\bibitem{DAISYWeb}
+DAISY website: {\bf www.research.ibm.com/daisy}
+
+\bibitem{VLIWWeb}
+IBM VLIW website: {\bf www.research.ibm.com/vliw}
+
+\end{thebibliography}
+
+\end{document}

@@ -1,0 +1,13 @@
+\contentsline {figure}{\numberline {1}{\ignorespaces (1) Usage info from invoking {\tt daisy} with no arguments.}}{5}
+\contentsline {figure}{\numberline {2}{\ignorespaces (2) Usage info from invoking {\tt daisy} with no arguments.}}{6}
+\contentsline {figure}{\numberline {3}{\ignorespaces Initialization, configuration, and start of translation under {\tt daisy}.}}{8}
+\contentsline {figure}{\numberline {4}{\ignorespaces Steady state of {\tt daisy} mixing execution and translation.}}{8}
+\contentsline {figure}{\numberline {5}{\ignorespaces Sample VLIW Tree Instruction.}}{12}
+\contentsline {figure}{\numberline {6}{\ignorespaces Sample Predicated Code Corresponding to VLIW Tree Instruction.}}{15}
+\contentsline {figure}{\numberline {7}{\ignorespaces Example of conversion from {\it PowerPC} code to VLIW tree instructions.}}{16}
+\contentsline {figure}{\numberline {8}{\ignorespaces Description of conversion from {\it PowerPC} to VLIW.}}{17}
+\contentsline {figure}{\numberline {9}{\ignorespaces Example of VLIW dump output with {\tt -N} flag.}}{30}
+\contentsline {figure}{\numberline {10}{\ignorespaces Generation of Simulation Code for a VLIW Tree Instruction.}}{32}
+\contentsline {figure}{\numberline {11}{\ignorespaces Usage Information for {\tt dvstats}.}}{39}
+\contentsline {figure}{\numberline {12}{\ignorespaces Start of {\tt ls.histo} file}}{40}
+\contentsline {figure}{\numberline {13}{\ignorespaces Example of {\tt daisy.stats} file produced by {\tt daisy}.}}{41}

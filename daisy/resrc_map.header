@@ -1,0 +1,27 @@
+#ifndef H_resrc_map
+#define H_resrc_map
+
+#define UNMAPPED			(-1)
+#define INTREG				0
+#define FLTREG				1
+#define CONDREG				2
+#define LINKREG				3
+
+#define LINK_BIT			1 /* Bit for set LR in branch ins   */
+
+/* Use register r13 as pointer to (non-real/mapped) RIOS registers */
+#define RESRC_PTR			13
+
+typedef struct {
+   unsigned       offset;		/* Offset of original rel to r13 */
+   unsigned short orig;			/* Resource   used by orig ins */
+	    char  type;			/* Resrc type used by orig ins */
+   unsigned short map;			/* Resource used by xlated ins */
+} RESRC_MAP;
+
+/* Offsets from register r13 when running program */
+
+/* The values of R3 to R12 are used to save those registers when xlate_entry
+   is invoked for a new page while running the program.  These values
+   must match those in the "xlate_entry_raw" routine of "r13.s".
+*/

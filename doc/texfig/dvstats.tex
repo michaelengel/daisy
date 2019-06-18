@@ -1,0 +1,66 @@
+\documentstyle[11pt]{article}
+\renewcommand{\baselinestretch}{1.1}
+\def\secparindent{\hskip17pt\relax}
+\parskip 3pt plus 4pt minus 4pt
+\oddsidemargin -0.3in
+\evensidemargin -0.3in
+\textwidth6.5in
+\textheight9.0in
+\topmargin -1.0in
+
+\pagestyle{empty}
+
+\begin{document}
+
+\begin{small}
+\begin{verbatim}
+The "dvstats" utility is used to obtain statistics about a PowerPC
+program which has been translated using "dtest".  Its usage is
+
+         dvstats [flags] <cnts_file> [<info_dir>]
+
+where <cnts_file> must have a ".vliw_perf_ins_cnts" suffix, and contain
+counts of the number of times each VLIW instruction was executed.
+(The ".vliw_perf_ins_cnts" suffix need not be specified.)  The
+The <cnts_file> should be automatically produced by running "dtest".
+
+The <info_dir> is where information about each instruction
+is placed by "dtest" for use here. 
+
+Valid flags are "-b#", "-c", ,"-e", "-p", and "-s".  Dynamic opcode
+frequencies are always produced.  The "-p" flag causes a ".pdf" file
+to be created.  This ".pdf" file contains profile-directed-feedback
+information.  The "-c" flag turns off generation of the .cnts file
+(which can be very large).  The "-e" flag controls how the ".exits"
+file is generated. (This file is generated for "dvstats" only).  By
+default the ".exits" file is sorted by frequency of group exit.  (Each
+group is a tree of VLIW tree instructions.)  With the "-e" flag, the
+".exits" file is sorted by the VLIW at the entry point of a group.  In
+this way it can be determined how many of the paths through the group
+tree are actually exercised.  The "-b#" flag is used to specify the
+degree of branch correlation used in producing the ".condbr" file.
+The value must be non-negative and less than 16.
+
+Several output files are produced from an executable file "foo":
+
+foo.histo:      Histograms (both textual and graphical) of the
+                number of operations executed per VLIW instruction.
+                Useful for determining ILP achieved.
+
+foo.exits:      A list of the paths in each VLIW group, and the
+                ILP attained on each.  Useful for finding areas
+                where compiler is deficient.
+
+foo.cnts:       Lists the number of times each VLIW instruction
+
+foo.pops1:      A list of opcode frequencies in decreasing order
+                of use.  These frequencies are those of operations
+                on the taken path through a VLIW instruction.
+
+foo.sops1:      A list of opcode frequencies in decreasing order
+                of use.  These frequencies are those of operations
+                on all paths through a VLIW instruction.
+\end{verbatim}
+\end{small}
+
+\end{document}

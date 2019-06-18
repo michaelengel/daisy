@@ -1,0 +1,137 @@
+#define WORDBITS			(sizeof(unsigned)*BITSPERBYTE)
+#define NUM_WORDS_RESRCS        (NUM_MACHINE_REGS+WORDBITS-1)/WORDBITS
+
+/* Special resources used to flag conditions -- not in machine
+   XER is used only to flag the fact that XER0 through XER31 should
+   be set and does not in itself represent a machine resource.
+ */
+#define NOTHING				NUM_MACHINE_REGS
+#define MULTIPLE			(NOTHING+1)
+#define XER				(NOTHING+2)
+
+/* CTR is kept in R32 */
+#ifndef CTR_IS_NOT_R32
+#define CTR				R32
+#endif
+
+#ifndef MQ_IS_NOT_R33
+#define MQ				R33
+#endif
+
+/* Aliases of Bit Names in XER */
+#define SO				XER0
+#define OV				XER1
+#define CA				XER2
+
+/* Aliases of Bitfield Names in CCR */
+#define CRF0				CR0
+#define CRF1				CR4
+#define CRF2				CR8
+#define CRF3				CR12
+#define CRF4				CR16
+#define CRF5				CR20
+#define CRF6				CR24
+#define CRF7				CR28
+#define CRF8				CR32
+#define CRF9				CR36
+#define CRF10				CR40
+#define CRF11				CR44
+#define CRF12				CR48
+#define CRF13				CR52
+#define CRF14				CR56
+#define CRF15				CR60
+#define CRF16				CR64
+#define CRF17				CR68
+#define CRF18				CR72
+#define CRF19				CR76
+#define CRF20				CR80
+#define CRF21				CR84
+#define CRF22				CR88
+#define CRF23				CR92
+#define CRF24				CR96
+#define CRF25				CR100
+#define CRF26				CR104
+#define CRF27				CR108
+#define CRF28				CR112
+#define CRF29				CR116
+#define CRF30				CR120
+#define CRF31				CR124
+#define CRF32				CR128
+#define CRF33				CR132
+#define CRF34				CR136
+#define CRF35				CR140
+#define CRF36				CR144
+#define CRF37				CR148
+#define CRF38				CR152
+#define CRF39				CR156
+#define CRF40				CR160
+#define CRF41				CR164
+#define CRF42				CR168
+#define CRF43				CR172
+#define CRF44				CR176
+#define CRF45				CR180
+#define CRF46				CR184
+#define CRF47				CR188
+#define CRF48				CR192
+#define CRF49				CR196
+#define CRF50				CR200
+#define CRF51				CR204
+#define CRF52				CR208
+#define CRF53				CR212
+#define CRF54				CR216
+#define CRF55				CR220
+#define CRF56				CR224
+#define CRF57				CR228
+#define CRF58				CR232
+#define CRF59				CR236
+#define CRF60				CR240
+#define CRF61				CR244
+#define CRF62				CR248
+#define CRF63				CR252
+
+/* Aliases of Bit Names in FPSCR */
+#define FX				FPSCR0
+#define FEX				FPSCR1
+#define VX				FPSCR2
+#define OX				FPSCR3
+#define UX				FPSCR4
+#define ZX				FPSCR5
+#define XX				FPSCR6
+#define VXSNAN				FPSCR7
+#define VXISI				FPSCR8
+#define VXIDI				FPSCR9
+#define VXZDZ				FPSCR10
+#define VXIMZ				FPSCR11
+#define VXVC				FPSCR12
+#define FR				FPSCR13
+#define FI				FPSCR14
+#define C				FPSCR15
+#define FL				FPSCR16
+#define FG				FPSCR17
+#define FE				FPSCR18
+#define FU				FPSCR19
+#define VXSOFT				FPSCR21
+#define VXSQRT				FPSCR22
+#define VXCVI				FPSCR23
+#define VE				FPSCR24
+#define OE				FPSCR25
+#define UE				FPSCR26
+#define ZE				FPSCR27
+#define XE				FPSCR28
+#define NI				FPSCR29
+#define RN0				FPSCR30
+#define RN1				FPSCR31
+
+/* Aliases of Bit Names in MSR */
+
+#define EE				MSR16
+#define PR				MSR17
+#define FP				MSR18
+#define MSRME				MSR19
+#define MSRFE				MSR20
+#define AL				MSR24
+#define IP				MSR25
+#define IR				MSR26
+#define DR				MSR27
+
+#endif

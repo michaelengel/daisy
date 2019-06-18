@@ -1,0 +1,157 @@
+\documentstyle[11pt]{article}
+
+\setlength{\oddsidemargin}{-0.19in}
+%\setlength{\evensidemargin}{-0.315in}
+\setlength{\textwidth}{6.8in}
+\setlength{\textheight}{9.8in}
+\setlength{\columnsep}{2.0pc}
+\setlength{\topmargin}{-0.30in}
+\setlength{\headheight}{-0.30in}
+\setlength{\headsep}{0.0in}
+\setlength{\parindent}{1pc}
+
+\renewcommand{\baselinestretch}{0.90}
+
+\pagestyle{empty}
+
+\begin{document}
+
+\noindent\rule{6.79in}{1.00mm}
+
+\begin{small} 
+The conversion begins by placing an empty path whose
+continuation is instruction 1 ({\tt add r1,r2,r3} as the sole entry
+in the {\tt PathList}.  I.e. {\tt PathList} is initially {\tt
+\{[(),1,1.0]\}}, where each triple in the {\tt PathList} is of the
+form:  \{{\it $<$List of Instructions in Path$>$, $<$Continuation of
+Path$>$, $<$Relative Probability of Reaching the End of This Path
+Given That Control Has Arrived at the Entry Instruction$>$}\}.  The
+{\it current path} is defined to be the highest probability path in
+the {\tt PathList}.  Scheduling then proceeds as follows:
+
+\begin{enumerate}
+
+\item An empty VLIW ({\tt VLIW1}) is created and added to the
+current path, and {\it PowerPC} instruction 1, {\tt add r1,r2,r3}, is
+inserted in it.  The continuation of the current path now becomes
+instruction 2. So {\tt PathList} is {\tt \{[(1),2,1.0]\}}.
+
+\item {\it PowerPC} instruction 2, {\tt bc L1} converts {\tt VLIW1}
+from a segment to a tree, with the left branch representing the
+fall-through path of {\tt bc} and right branch representing its
+target, {\tt L1} (instruction 8).  Note that the condition for {\tt
+bc} has been computed prior to {\tt VLIW1}, and hence the {\tt bc}
+and {\tt add} can be executed in parallel, assuming resource
+constraints allow it.  Since instruction 2 is a branch, the current
+path is removed from {\tt PathList} and two new paths are created,
+one whose continuation is the fall-through instruction 3, and
+another whose continuation is the target {\tt L1} (instruction 8).
+Both new paths are placed in the {\tt PathList}, making it {\tt
+\{[(1,2),3,0.7], [(1,2),8,0.3]\}}.  Assume the branch of instruction
+2 is guessed to be taken 30\% of the time.
+
+\item Since the fall-through path is calculated to have a
+higher probability it becomes the current path.  {\it PowerPC}
+instruction 3, {\tt sli r12,r1,3} depends on the result of
+instruction 1, {\tt add r1,r2,r3}.  Hence it must go to a new VLIW.
+Hence {\tt VLIW2} is created on the current path, with the
+fall-through tip of {\tt VLIW1} pointing to it. The continuation of
+the current path is set to instruction 4.  {\tt PathList} becomes
+{\tt \{[(1,2,3),4,0.7], [(1,2),8,0.3]\}}.
+
+\item {\it PowerPC} instruction 4, {\tt xor r4,r5,r6} does not depend
+on any result yet produced.  Hence it can be executed in {\tt VLIW1}.
+However, in order to maintain precise exceptions, we rename the
+result to register {\tt r63} (which is not in the {\it PowerPC}
+architecture) and copy {\tt r63} to {\tt r4} in {\tt VLIW2}.  So
+{\tt PathList} = {\tt \{[(1,2,3,4],5,0.7], [(1,2),8,0.3]\}}.  If an
+exception (say an external interrupt) occurred just before executing
+{\tt VLIW2}, the emulated {\it PowerPC} machine appears to have
+completed instructions 1 and 2, and is at the point immediately
+prior to instruction 3.  The results of instruction 4 are still in
+{\tt r63} and are not yet committed to an architected register, at
+the point of the interrupt.
+%% 
+%% If we had allowed instruction 4 to commit its result to an
+%% architected register, then it could be in general impossible to
+%% identify the precise point in the {\it PowerPC} program we are in,
+%% in case of an interrupt before {\tt VLIW2}. Also note that if an
+%% operation executed out of order (i.e. whose target is a
+%% non-architected register) causes an exception, the exception does
+%% not occur, only the exception tag of the target register {\tt r63}
+%% is set (each non-architected register has an extra exception tag
+%% bit). If the first branch indeed is not taken and the program
+%% executes the commit operation {\tt lr r4=r63} in {\tt VLIW2}, the
+%% exception then occurs, and the precise {\it PowerPC} instruction
+%% responsible for the exception is communicated to the base
+%% architecture operating system.
+
+\item {\it PowerPC} instruction 5, {\tt and r8,r4,r7} depends on the
+result of the {\tt xor}.  Because of our aggressive scheduling this
+result can be used in {\tt VLIW2} by noting that the desired value
+of {\tt r4} is in {\tt r63}, yielding {\tt and r8,r63,r7}.  The
+continuation of the current path is set to 6.  {\tt PathList}
+becomes {\tt \{[(1,2,3,4,5),6,0.7], [(1,2),8,0.3]\}}.
+
+\item {\it PowerPC} instruction 6, {\tt bc L2} has no data
+dependences and hence can be scheduled in {\tt VLIW2} in a manner
+analogous to {\tt bc L1} being scheduled in {\tt VLIW1}.  But we do
+not schedule branches earlier than the last VLIW on a path, in order
+to maintain precise interrupts.  The current path is replaced by
+two paths: one continuing with the fall-through instruction 7, and
+one continuing with the target {\tt L2} (instruction 10). Assume this
+second branch is also guessed to be taken with 30\% probability.
+{\tt Pathlist} becomes {\tt \{[(1,2,3,4,5,6],7,0.49(0.7$\times$0.7)],
+[(1,2),8,0.3], [(1,2,3,4,5,6),10,0.21(0.7$\times$0.3)]\}}.
+
+\item Of the 3 paths, the fall-through path of instruction 6, is now
+most likely, so it becomes the current path.  Its continuation is
+{\it PowerPC} instruction 7, {\tt b OFFPAGE}.  It is placed on the
+left tip of {\tt VLIW2} since branches are scheduled in order.
+Since this branch has no onpage continuations, this path is removed
+from {\tt PathList}, and the next most probable path becomes the new
+current path.  {\tt Pathlist} becomes {\tt \{[(1,2),8,0.3],
+[(1,2,3,4,5,6),10,0.21]\}}.
+
+\item The {\it PowerPC} instruction 8 {\tt sub r9,r10,r11}, the {\tt
+L1} target, is the continuation of the current, highest probability
+path.  This target continues from the right tip of {\tt VLIW1},
+since that is the location of the branch that inserted it in {\tt
+PathList}.  This {\tt sub} instruction has no data dependences with
+earlier instructions, and hence can be scheduled on the right tip of
+{\tt VLIW1}.  The continuation of the current path becomes 9, and
+{\tt PathList} becomes {\tt \{[(1,2,8),9,0.3],
+[(1,2,3,4,5,6),10,0.21]\}}.
+
+
+\item {\it PowerPC} instruction 9, {\tt b OFFPAGE} is next on the
+current path.  It is handled just like instruction 7, and hence a
+{\tt b OFFPAGE} is placed on the right tip of {\tt VLIW1}.  This
+path is then removed from {\tt PathList}, which now becomes {\tt
+\{[(1,2,3,4,5,6),10,0.21]\}}.
+
+\item The only open path remaining in the list is the one that
+continues with {\it PowerPC} instruction 10 {\tt cntlz r11,r4}, the
+{\tt L2} target from {\tt VLIW2}.  It is dependent on the result of
+instruction {\tt 4}, {\tt xor r4,r5,r6}.  As noted, this value of
+{\tt r4} is available in {\tt VLIW2} itself in {\tt r63}.  Hence
+instruction 10 can be scheduled on the right tip of {\tt VLIW2}.
+The continuation of the current path becomes 11, and {\tt PathList}
+becomes {\tt \{[(1,2,3,4,5,6,10),11,0.21]\}}.
+
+\item {\it PowerPC} instruction 11, {\tt b OFFPAGE} is next on this
+path.  It is handled just like instructions 7 and 9, and hence a
+{\tt b OFFPAGE} is placed on the right tip of {\tt VLIW2}.  This
+path is then removed from the list.  As there are no more entries in
+the PathList, and no more entries to process, the algorithm
+terminates.  The translated code is ready for execution beginning at
+{\tt VLIW1}.
+
+\end{enumerate}
+\end{small}
+
+\vspace*{-0.15in}
+
+\noindent\rule{6.79in}{1.00mm}
+
+\end{document}

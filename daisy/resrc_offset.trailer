@@ -1,0 +1,7 @@
+
+/* CTR is kept in R32 */
+#ifndef CTR_IS_NOT_R32
+#define CTR_OFFSET				R32_OFFSET
+#endif
+
+#endif

@@ -1,0 +1,92 @@
+This is TeX, C Version 3.141 (AIX RS/6000) (format=latex 97.2.4)  18 MAY 2000 18:58
+**&latex dvstats
+(dvstats.tex
+LaTeX2e <1996/12/01>
+(/vol/tex/texmf/tex/latex/base/latex209.def
+File: latex209.def 1996/05/21 v0.51 Standard LaTeX file
+
+Entering LaTeX 2.09 compatibility mode.
+\footheight=\dimen102
+\@maxsep=\dimen103
+\@dblmaxsep=\dimen104
+\@cla=\count79
+\@clb=\count80
+\mscount=\count81
+(/vol/tex/texmf/tex/latex/base/tracefnt.sty
+Package: tracefnt 1996/07/26 v3.0i Standard LaTeX package (font tracing)
+\tracingfonts=\count82
+LaTeX Info: Redefining \selectfont on input line 139.
+)
+\symbold=\mathgroup4
+\symsans=\mathgroup5
+\symtypewriter=\mathgroup6
+\symitalic=\mathgroup7
+\symsmallcaps=\mathgroup8
+\symslanted=\mathgroup9
+LaTeX Font Info:    Redeclaring math alphabet \mathbf on input line 306.
+LaTeX Font Info:    Redeclaring math alphabet \mathsf on input line 307.
+LaTeX Font Info:    Redeclaring math alphabet \mathtt on input line 308.
+LaTeX Font Info:    Redeclaring math alphabet \mathit on input line 314.
+LaTeX Info: Redefining \em on input line 324.
+
+(/vol/tex/texmf/tex/latex/base/latexsym.sty
+Package: latexsym 1996/11/20 v2.2d Standard LaTeX package (lasy symbols)
+\symlasy=\mathgroup10
+LaTeX Font Info:    Overwriting symbol font `lasy' in version `bold'
+(Font)                  U/lasy/m/n --> U/lasy/b/n on input line 85.
+)
+LaTeX Font Info:    Redeclaring math delimiter \lgroup on input line 388.
+LaTeX Font Info:    Redeclaring math delimiter \rgroup on input line 390.
+LaTeX Font Info:    Redeclaring math delimiter \bracevert on input line 392.
+)
+(/vol/tex/texmf/tex/latex/base/article.cls
+Document Class: article 1996/10/31 v1.3u Standard LaTeX document class
+(/vol/tex/texmf/tex/latex/base/size11.clo
+File: size11.clo 1996/10/31 v1.3u Standard LaTeX file (size option)
+)
+\c@part=\count83
+\c@section=\count84
+\c@subsection=\count85
+\c@subsubsection=\count86
+\c@paragraph=\count87
+\c@subparagraph=\count88
+\c@figure=\count89
+\c@table=\count90
+\abovecaptionskip=\skip41
+\belowcaptionskip=\skip42
+Compatibility mode: definition of \rm ignored.
+Compatibility mode: definition of \sf ignored.
+Compatibility mode: definition of \tt ignored.
+Compatibility mode: definition of \bf ignored.
+Compatibility mode: definition of \it ignored.
+Compatibility mode: definition of \sl ignored.
+Compatibility mode: definition of \sc ignored.
+LaTeX Info: Redefining \cal on input line 542.
+LaTeX Info: Redefining \mit on input line 543.
+\bibindent=\dimen105
+) (dvstats.aux)
+LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 13.
+LaTeX Font Info:    ... okay on input line 13.
+LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 13.
+LaTeX Font Info:    ... okay on input line 13.
+LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 13.
+LaTeX Font Info:    ... okay on input line 13.
+LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 13.
+LaTeX Font Info:    ... okay on input line 13.
+LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 13.
+LaTeX Font Info:    ... okay on input line 13.
+LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 13.
+LaTeX Font Info:    ... okay on input line 13.
+ [1
+
+] (dvstats.aux) ) 
+Here is how much of TeX's memory you used:
+ 309 strings out of 10947
+ 2934 string characters out of 73218
+ 49019 words of memory out of 240001
+ 3205 multiletter control sequences out of 21000
+ 4108 words of font info for 16 fonts, out of 100000 for 255
+ 14 hyphenation exceptions out of 607
+ 23i,4n,19p,168b,198s stack positions out of 300i,40n,120p,3000b,4000s
+
+Output written on dvstats.dvi (1 page, 2700 bytes).
